@@ -254,7 +254,7 @@ kubectl --kubeconfig /home/monitor/.kube/config -n public-app get ingress
 Test qua IP HAProxy, không cần DNS:
 
 ```bash
-curl -H 'Host: nginx.apps.k3s.home.arpa' http://192.168.30.45/
+curl -H 'Host: nginx.onprem.site' http://192.168.30.45/
 ```
 
 Response cần chứa:
@@ -276,21 +276,21 @@ C:\Windows\System32\drivers\etc\hosts
 Thêm dòng:
 
 ```text
-192.168.30.45 nginx.apps.k3s.home.arpa
+192.168.30.45 nginx.onprem.site
 ```
 
 Xác minh trong PowerShell:
 
 ```powershell
-findstr /C:"nginx.apps.k3s.home.arpa" "$env:SystemRoot\System32\drivers\etc\hosts"
-ping -n 1 nginx.apps.k3s.home.arpa
-curl.exe -v http://nginx.apps.k3s.home.arpa/
+findstr /C:"nginx.onprem.site" "$env:SystemRoot\System32\drivers\etc\hosts"
+ping -n 1 nginx.onprem.site
+curl.exe -v http://nginx.onprem.site/
 ```
 
 Sau đó mở:
 
 ```text
-http://nginx.apps.k3s.home.arpa
+http://nginx.onprem.site
 ```
 
 Nếu hostname resolve đúng nhưng kết nối timeout, vấn đề là route/firewall tới LAN, không phải hosts file.

@@ -205,11 +205,11 @@ Ingress là dữ liệu cấu hình trong Kubernetes; Traefik mới là controll
 ### 6.2. Luồng 11 bước của demo app
 
 ```bash
-curl -H 'Host: nginx.apps.k3s.home.arpa' http://192.168.30.45/
+curl -H 'Host: nginx.onprem.site' http://192.168.30.45/
 ```
 
 1. Client mở TCP connection tới `192.168.30.45:80`.
-2. HTTP request mang hostname `nginx.apps.k3s.home.arpa`.
+2. HTTP request mang hostname `nginx.onprem.site`.
 3. HAProxy frontend `application_http` nhận connection.
 4. HAProxy backend chuyển connection tới `192.168.30.35:80`.
 5. ServiceLB Pod trên tang4 nhận host port `80`.
@@ -223,7 +223,7 @@ curl -H 'Host: nginx.apps.k3s.home.arpa' http://192.168.30.45/
 ```text
 Client
   |
-  | nginx.apps.k3s.home.arpa
+  | nginx.onprem.site
   v
 HAProxy tang3 :80/:443
   |

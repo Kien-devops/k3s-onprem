@@ -278,7 +278,7 @@ Các resource được tách file và apply theo dependency order:
 1. `namespace.yml`: tạo namespace `public-app`, là ranh giới logic cho demo.
 2. `deployment.yml`: tạo Deployment `nginx`, hai replicas, pull `nginx:alpine`, có readiness probe và `nodeSelector` buộc cả hai Pod chạy trên `server-tang4`.
 3. `service.yml`: tạo Service loại `ClusterIP`, chọn Pod có label `app=nginx` và cung cấp cổng ổn định bên trong cluster.
-4. `ingress.yml`: khai báo hostname `nginx.apps.k3s.home.arpa`, path `/`, `ingressClassName: traefik`, rồi trỏ tới Service `nginx`.
+4. `ingress.yml`: khai báo hostname `nginx.onprem.site`, path `/`, `ingressClassName: traefik`, rồi trỏ tới Service `nginx`.
 
 Service không cần `NodePort`: HAProxy không đi thẳng tới Service của app. HAProxy đi tới cổng `80/443` mà ServiceLB mở cho Traefik trên tang4; Traefik sau đó truy cập ClusterIP Service qua mạng Kubernetes.
 
@@ -296,13 +296,13 @@ Vì vậy HAProxy không biết Nginx Pod nằm ở đâu, không biết namespa
 Lệnh test không cần DNS:
 
 ```bash
-curl -H 'Host: nginx.apps.k3s.home.arpa' http://192.168.30.45/
+curl -H 'Host: nginx.onprem.site' http://192.168.30.45/
 ```
 
 Request đi qua 11 bước:
 
 1. `curl` kết nối tới LAN IP `192.168.30.45`, port `80`.
-2. Header `Host: nginx.apps.k3s.home.arpa` được gửi trong HTTP request.
+2. Header `Host: nginx.onprem.site` được gửi trong HTTP request.
 3. HAProxy frontend `application_http` nhận TCP connection trên tang3.
 4. HAProxy backend chuyển connection tới `192.168.30.35:80`.
 5. ServiceLB trên tang4 nhận traffic ở host port `80`.
@@ -315,7 +315,7 @@ Request đi qua 11 bước:
 
 ```text
 Client / curl
-  |  Host: nginx.apps.k3s.home.arpa
+  |  Host: nginx.onprem.site
   v
 192.168.30.45:80 (HAProxy tang3)
   |
@@ -337,10 +337,10 @@ nginx Pod 1        nginx Pod 2
 Muốn dùng browser Windows, mở PowerShell hoặc Notepad bằng quyền Administrator và thêm vào `C:\Windows\System32\drivers\etc\hosts`:
 
 ```text
-192.168.30.45 nginx.apps.k3s.home.arpa
+192.168.30.45 nginx.onprem.site
 ```
 
-Sau đó mở `http://nginx.apps.k3s.home.arpa`. Hosts entry chỉ giải quyết name resolution; máy Windows vẫn phải có route tới LAN `192.168.30.0/24`.
+Sau đó mở `http://nginx.onprem.site`. Hosts entry chỉ giải quyết name resolution; máy Windows vẫn phải có route tới LAN `192.168.30.0/24`.
 
 ## Luồng Kubernetes API
 
@@ -404,7 +404,7 @@ ansible-playbook playbooks/app.yml
 kubectl --kubeconfig /home/monitor/.kube/config get pods -n public-app -o wide
 kubectl --kubeconfig /home/monitor/.kube/config get service -n public-app
 kubectl --kubeconfig /home/monitor/.kube/config get ingress -n public-app
-curl -H 'Host: nginx.apps.k3s.home.arpa' http://192.168.30.45/
+curl -H 'Host: nginx.onprem.site' http://192.168.30.45/
 ```
 
 Chi tiết từng bước nằm trong [docs/deployment.md](docs/deployment.md).

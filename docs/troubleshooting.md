@@ -61,22 +61,22 @@ Client
 Test không phụ thuộc DNS:
 
 ```bash
-curl -v -H 'Host: nginx.apps.k3s.home.arpa' http://192.168.30.45/
+curl -v -H 'Host: nginx.onprem.site' http://192.168.30.45/
 ```
 
 Trên Windows:
 
 ```powershell
-findstr /C:"nginx.apps.k3s.home.arpa" "$env:SystemRoot\System32\drivers\etc\hosts"
+findstr /C:"nginx.onprem.site" "$env:SystemRoot\System32\drivers\etc\hosts"
 ping -n 1 192.168.30.45
-ping -n 1 nginx.apps.k3s.home.arpa
-curl.exe -v http://nginx.apps.k3s.home.arpa/
+ping -n 1 nginx.onprem.site
+curl.exe -v http://nginx.onprem.site/
 ```
 
 Hosts file cần có:
 
 ```text
-192.168.30.45 nginx.apps.k3s.home.arpa
+192.168.30.45 nginx.onprem.site
 ```
 
 Diễn giải:
@@ -187,7 +187,7 @@ Mong đợi:
 
 ```text
 ingressClassName: traefik
-host: nginx.apps.k3s.home.arpa
+host: nginx.onprem.site
 path: /
 backend service: nginx, port http
 ```
@@ -423,7 +423,7 @@ kubectl --kubeconfig /home/monitor/.kube/config get nodes -o wide
 kubectl --kubeconfig /home/monitor/.kube/config get pods -A -o wide
 
 # Demo application path
-curl -H 'Host: nginx.apps.k3s.home.arpa' http://192.168.30.45/
+curl -H 'Host: nginx.onprem.site' http://192.168.30.45/
 
 # Full repository validation
 ansible-playbook playbooks/validate.yml

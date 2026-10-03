@@ -7,7 +7,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: nginx.apps.k3s.home.arpa
+    - host: nginx.onprem.site
       http:
         paths:
           - path: /
