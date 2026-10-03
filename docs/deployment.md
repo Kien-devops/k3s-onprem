@@ -51,16 +51,21 @@ The validation role checks both Kubernetes state and external traffic. It also
 asserts that the pre-existing Docker and monitoring containers are still
 running.
 
-## Deploy the public image example
+## Deploy the demo application
 
 ```bash
-ansible-playbook playbooks/public-app.yml
+ansible-playbook playbooks/app.yml
 kubectl --kubeconfig /home/monitor/.kube/config get pods -n public-app -o wide
+kubectl --kubeconfig /home/monitor/.kube/config get service -n public-app
+kubectl --kubeconfig /home/monitor/.kube/config get ingress -n public-app
 curl -H 'Host: nginx.apps.k3s.home.arpa' http://192.168.30.45/
 ```
 
-The example remains separate from cluster addons because it represents a user
-workload rather than cluster infrastructure.
+`playbooks/app.yml` copies and applies all files under `manifests/app/` in
+dependency order. The example remains separate from `k3s_addons` because it is
+a user workload rather than cluster infrastructure. Adding or reconciling it
+does not change HAProxy; Traefik routes the Ingress hostname through the
+existing tang4 entry point.
 
 ## DHCP address changes
 

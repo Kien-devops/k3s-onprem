@@ -1,0 +1,82 @@
+---
+- name: Deploy the nginx demo application
+  hosts: control_plane
+  gather_facts: false
+  become: true
+  vars:
+    app_manifest_source: ../manifests/app/
+    app_manifest_destination: /opt/k3s-lab/manifests/app
+    app_manifest_order:
+      - namespace.yml
+      - deployment.yml
+      - service.yml
+      - ingress.yml
+  tasks:
+    - name: Create the application manifest directory
+      ansible.builtin.file:
+        path: "{{ app_manifest_destination }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy the application manifests
+      ansible.builtin.copy:
+        src: "{{ app_manifest_source }}"
+        dest: "{{ app_manifest_destination }}/"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Apply the application resources in dependency order
+      ansible.builtin.command: >-
+        k3s kubectl apply
+        -f {{ app_manifest_destination }}/{{ item }}
+      loop: "{{ app_manifest_order }}"
+      register: app_apply
+      changed_when: >-
+        ' created' in app_apply.stdout or
+        ' configured' in app_apply.stdout
+
+    - name: Wait for both nginx replicas
+      ansible.builtin.command: >-
+        k3s kubectl -n public-app rollout status deployment/nginx
+        --timeout=180s
+      changed_when: false
+
+    - name: Read nginx pod state
+      ansible.builtin.command: >-
+        k3s kubectl -n public-app get pods -l app=nginx -o json
+      register: app_pods_raw
+      changed_when: false
+
+    - name: Verify both replicas run on the worker
+      vars:
+        app_pods: "{{ (app_pods_raw.stdout | from_json)['items'] }}"
+      ansible.builtin.assert:
+        that:
+          - app_pods | length == 2
+          - app_pods | map(attribute='spec.nodeName') | unique | list == [k3s_worker_name]
+          - app_pods | map(attribute='status.phase') | unique | list == ['Running']
+          - app_pods | map(attribute='status.containerStatuses') | flatten | map(attribute='ready') | unique | list == [true]
+        fail_msg: Both nginx replicas must be Ready on {{ k3s_worker_name }}.
+
+- name: Test the demo application through the existing HAProxy route
+  hosts: load_balancers
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Request nginx through HAProxy and Traefik
+      ansible.builtin.uri:
+        url: "http://{{ api_endpoint }}/"
+        headers:
+          Host: "{{ public_app_hostname }}"
+        return_content: true
+        status_code: 200
+      register: app_http
+
+    - name: Verify the nginx response
+      ansible.builtin.assert:
+        that:
+          - "'Welcome to nginx!' in app_http.content"
+        fail_msg: The nginx demo application was not reachable through HAProxy and Traefik.

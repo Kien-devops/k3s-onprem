@@ -146,8 +146,8 @@ the upstream K3s collection. Repository code consistently uses
 |   |-- preflight.yml
 |   |-- cluster.yml
 |   |-- addons.yml
+|   |-- app.yml
 |   |-- smoke-test.yml
-|   |-- public-app.yml
 |   `-- validate.yml
 |-- roles/
 |   |-- preflight/
@@ -158,13 +158,28 @@ the upstream K3s collection. Repository code consistently uses
 |   `-- validation/
 |-- manifests/
 |   |-- traefik/
-|   |-- smoke-test/
-|   `-- public-app.yaml
+|   |   `-- helmchartconfig.yml
+|   |-- app/
+|   |   |-- namespace.yml
+|   |   |-- deployment.yml
+|   |   |-- service.yml
+|   |   `-- ingress.yml
+|   `-- smoke-test/
+|       `-- nginx.yml
 `-- docs/
     |-- architecture.md
     |-- deployment.md
     `-- troubleshooting.md
 ```
+
+The repository separates four concerns:
+
+| Layer | Location | Responsibility |
+| --- | --- | --- |
+| Infrastructure automation | `inventories/`, `playbooks/`, `roles/` | Converge K3s, HAProxy, addons, and validation |
+| Cluster configuration | `manifests/traefik/` | Configure the cluster ingress entry point and ServiceLB pool |
+| Demo workload | `manifests/app/` | Run the nginx application used to demonstrate application delivery |
+| Validation workload | `manifests/smoke-test/` | Test the cluster ingress path independently of the demo app |
 
 Role responsibilities are intentionally narrow:
 
@@ -265,8 +280,12 @@ Public Registry
       -> Client
 ```
 
-The repository includes `manifests/public-app.yaml`, which contains the three
-resources an application normally needs:
+The repository contains one demo application under `manifests/app/`. Its
+Namespace, Deployment, ClusterIP Service, and Ingress are separate files so
+each Kubernetes responsibility remains visible without introducing Helm,
+Kustomize, or multiple environment overlays.
+
+The central workload resources are equivalent to:
 
 ```yaml
 apiVersion: apps/v1
@@ -298,6 +317,7 @@ metadata:
   name: nginx
   namespace: public-app
 spec:
+  type: ClusterIP
   selector:
     app: nginx
   ports:
@@ -327,10 +347,21 @@ spec:
 Deploy and test the maintained example:
 
 ```bash
-ansible-playbook playbooks/public-app.yml
+ansible-playbook playbooks/app.yml
 kubectl --kubeconfig /home/monitor/.kube/config get pods -n public-app -o wide
 curl -H 'Host: nginx.apps.k3s.home.arpa' http://192.168.30.45/
 ```
+
+Deploying this application does not change HAProxy. HAProxy continues to use
+only these worker entry points:
+
+```text
+:80  -> server-tang4:80
+:443 -> server-tang4:443
+```
+
+Traefik reads the Kubernetes Ingress rule and routes
+`nginx.apps.k3s.home.arpa` to the nginx Service and Pods.
 
 `nginx:alpine` is intentionally simple for this lab. Production workloads
 should pin an immutable digest or controlled version tag.
@@ -368,7 +399,7 @@ ansible-inventory --graph
 ansible-playbook playbooks/site.yml
 ansible-playbook playbooks/validate.yml
 ansible-playbook playbooks/smoke-test.yml
-ansible-playbook playbooks/public-app.yml
+ansible-playbook playbooks/app.yml
 ```
 
 The admin kubeconfig is stored at `/home/monitor/.kube/config` on tang3 and

@@ -24,7 +24,8 @@ Ingress does not require a new HAProxy backend.
 | HAProxy container/config | Yes | Configuration is validated before recreation |
 | Traefik configuration | Yes | Bundled K3s chart, constrained to tang4 |
 | ServiceLB placement | Yes | Node labels and service pool select tang4 |
-| Smoke/public lab apps | Yes | Separate from cluster addons |
+| Demo application | Yes | `manifests/app/`, separate from cluster addons |
+| Validation workload | Yes | `manifests/smoke-test/`, verifies ingress independently |
 | Docker apps on tang2 | No | Validated but never removed or reconfigured |
 | Prometheus/Grafana on tang3 | No | Validated but never removed or reconfigured |
 | LAN DHCP and Tailscale | No | Existing external networking |
@@ -49,6 +50,29 @@ svccontroller.k3s.cattle.io/lbpool=ingress
 The Traefik LoadBalancer Service selects the `ingress` pool. This places its
 ServiceLB Pod on tang4, where ports 80 and 443 are exposed. HAProxy always sends
 application traffic to this node.
+
+## Demo application flow
+
+```text
+Public Registry
+      -> K3s/containerd pulls nginx:alpine
+      -> Deployment
+      -> Pods on server-tang4
+      <- ClusterIP Service
+      <- Ingress
+      <- Traefik
+      <- ServiceLB
+      <- HAProxy on server-tang3
+      <- Client
+```
+
+The demo is split across `manifests/app/namespace.yml`, `deployment.yml`,
+`service.yml`, and `ingress.yml`. It is deployed by `playbooks/app.yml` and is
+not part of `k3s_addons`.
+
+No per-application HAProxy backend is required. HAProxy only forwards
+`:80/:443` to tang4; Traefik performs hostname routing from Kubernetes Ingress
+resources.
 
 ## Failure boundaries
 
