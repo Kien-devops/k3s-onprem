@@ -1,0 +1,46 @@
+---
+- name: Verify discovered LAN identity and minimum resources
+  hosts: all
+  gather_facts: true
+  become: false
+  tasks:
+    - name: Assert inventory IP exists on the host
+      ansible.builtin.assert:
+        that:
+          - ansible_host in ansible_all_ipv4_addresses
+        fail_msg: >-
+          Inventory expects {{ ansible_host }}, but host addresses are
+          {{ ansible_all_ipv4_addresses }}.
+
+    - name: Assert expected LAN interface exists
+      ansible.builtin.assert:
+        that:
+          - lan_interface in ansible_interfaces
+
+    - name: Assert minimum memory for K3s nodes
+      ansible.builtin.assert:
+        that:
+          - ansible_memtotal_mb >= 1024
+      when: inventory_hostname in groups['k3s_cluster']
+
+    - name: Report DHCP-address warning
+      ansible.builtin.debug:
+        msg: >-
+          Lab uses current DHCP address {{ ansible_host }}. Update inventory and
+          HAProxy if this lease changes.
+
+- name: Protect existing monitoring ports
+  hosts: load_balancer
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Capture monitoring containers before deployment
+      ansible.builtin.command: docker ps --format {% raw %}'{{.Names}}|{{.Status}}|{{.Ports}}'{% endraw %}
+      register: monitoring_before
+      changed_when: false
+
+    - name: Assert Grafana and Prometheus are running
+      ansible.builtin.assert:
+        that:
+          - "'power-grafana' in monitoring_before.stdout"
+          - "'power-prometheus' in monitoring_before.stdout"

@@ -1,0 +1,43 @@
+---
+- name: Install the K3s server without distro package changes
+  hosts: server
+  gather_facts: true
+  become: true
+  roles:
+    - role: k3s.orchestration.k3s_server
+
+  post_tasks:
+    - name: Restrict the K3s server configuration
+      ansible.builtin.file:
+        path: /etc/rancher/k3s/config.yaml
+        mode: "0600"
+
+    - name: Create the controller kubeconfig directory
+      ansible.builtin.file:
+        path: "{{ kubeconfig | dirname }}"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      become: false
+
+    - name: Fetch the admin kubeconfig to the Ansible controller
+      ansible.builtin.fetch:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: "{{ kubeconfig }}"
+        flat: true
+
+    - name: Point kubeconfig at the HAProxy API endpoint
+      ansible.builtin.replace:
+        path: "{{ kubeconfig }}"
+        regexp: 'server: https://127\.0\.0\.1:6443'
+        replace: "server: https://{{ api_endpoint }}:{{ api_port }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+
+- name: Join the K3s worker without distro package changes
+  hosts: agent
+  gather_facts: true
+  become: true
+  roles:
+    - role: k3s.orchestration.k3s_agent

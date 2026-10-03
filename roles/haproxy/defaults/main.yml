@@ -1,0 +1,4 @@
+---
+haproxy_enable_ingress: false
+haproxy_config_dir: /home/monitor/k3s-haproxy
+haproxy_container_name: k3s-haproxy

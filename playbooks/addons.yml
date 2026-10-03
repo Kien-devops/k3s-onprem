@@ -1,0 +1,43 @@
+---
+- name: Configure Traefik ServiceLB placement
+  hosts: server
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Copy Traefik ServiceLB pool configuration
+      ansible.builtin.copy:
+        src: ../manifests/traefik/helmchartconfig.yml
+        dest: /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Wait for Traefik rollout
+      ansible.builtin.command: >-
+        k3s kubectl -n kube-system rollout status deployment/traefik
+        --timeout=180s
+      changed_when: false
+
+    - name: Wait for ServiceLB pod on worker
+      ansible.builtin.shell: >-
+        set -o pipefail &&
+        k3s kubectl -n kube-system get pods -o wide |
+        grep 'svclb-traefik' |
+        grep 'server-tang4'
+      args:
+        executable: /bin/bash
+      register: svclb_worker
+      retries: 18
+      delay: 10
+      until: svclb_worker.rc == 0
+      changed_when: false
+
+    - name: Ensure ServiceLB is absent from control plane
+      ansible.builtin.shell: >-
+        set -o pipefail &&
+        ! k3s kubectl -n kube-system get pods -o wide |
+        grep 'svclb-traefik' |
+        grep 'server-tang2'
+      args:
+        executable: /bin/bash
+      changed_when: false

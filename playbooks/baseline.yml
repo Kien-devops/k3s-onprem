@@ -1,0 +1,23 @@
+---
+- name: Apply minimum K3s host baseline
+  hosts: k3s_cluster
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Disable active swap
+      ansible.builtin.command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+      changed_when: true
+
+    - name: Disable swap entries at boot
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^(?!#)(.*\s+swap\s+.*)$'
+        replace: '# k3s-disabled \1'
+
+    - name: Load required kernel modules
+      ansible.builtin.command: modprobe {{ item }}
+      loop:
+        - overlay
+        - br_netfilter
+      changed_when: false

@@ -1,0 +1,79 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-demo
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-index
+  namespace: lab-demo
+data:
+  index.html: |
+    K3s homelab smoke test
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-smoke
+  namespace: lab-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-smoke
+  template:
+    metadata:
+      labels:
+        app: nginx-smoke
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: server-tang4
+      containers:
+        - name: nginx
+          image: nginx:1.29.1-alpine
+          ports:
+            - name: http
+              containerPort: 80
+          volumeMounts:
+            - name: index
+              mountPath: /usr/share/nginx/html/index.html
+              subPath: index.html
+              readOnly: true
+      volumes:
+        - name: index
+          configMap:
+            name: nginx-index
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-smoke
+  namespace: lab-demo
+spec:
+  selector:
+    app: nginx-smoke
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-smoke
+  namespace: lab-demo
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: demo.apps.k3s.home.arpa
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx-smoke
+                port:
+                  name: http

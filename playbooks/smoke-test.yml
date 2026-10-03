@@ -1,0 +1,47 @@
+---
+- name: Deploy smoke application
+  hosts: server
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Copy smoke application manifest
+      ansible.builtin.copy:
+        src: ../manifests/smoke-test/nginx.yml
+        dest: /var/lib/rancher/k3s/server/manifests/lab-smoke-test.yaml
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Wait for the static manifest controller to create the deployment
+      ansible.builtin.command: >-
+        k3s kubectl -n lab-demo get deployment/nginx-smoke
+      register: smoke_deployment
+      retries: 30
+      delay: 2
+      until: smoke_deployment.rc == 0
+      changed_when: false
+
+    - name: Wait for smoke deployment
+      ansible.builtin.command: >-
+        k3s kubectl -n lab-demo rollout status deployment/nginx-smoke
+        --timeout=180s
+      changed_when: false
+
+- name: Test ingress through HAProxy
+  hosts: load_balancer
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Request smoke application through the ingress frontend
+      ansible.builtin.uri:
+        url: http://192.168.30.45/
+        headers:
+          Host: demo.apps.k3s.home.arpa
+        return_content: true
+        status_code: 200
+      register: smoke_http
+
+    - name: Assert smoke response
+      ansible.builtin.assert:
+        that:
+          - "'K3s homelab smoke test' in smoke_http.content"

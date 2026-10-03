@@ -1,0 +1,13 @@
+# Credentials & server list
+server.txt
+*server*.txt
+*.env
+*.pem
+*.key
+
+# Ansible/runtime output
+*.retry
+.ansible/
+artifacts/
+kubeconfig*
+vault.yml
