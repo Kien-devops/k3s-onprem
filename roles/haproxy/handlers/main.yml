@@ -1,0 +1,19 @@
+---
+- name: Remove the previous HAProxy container
+  ansible.builtin.command: docker rm -f {{ haproxy_container_name }}
+  register: haproxy_remove
+  failed_when: haproxy_remove.rc not in [0, 1]
+  changed_when: haproxy_remove.rc == 0
+  listen: Recreate HAProxy container
+
+- name: Start the HAProxy container
+  ansible.builtin.command: >-
+    docker run -d
+    --name {{ haproxy_container_name }}
+    --restart unless-stopped
+    --network host
+    --user 0:0
+    -v {{ haproxy_config_path }}:/usr/local/etc/haproxy/haproxy.cfg:ro
+    {{ haproxy_image }}
+  changed_when: true
+  listen: Recreate HAProxy container

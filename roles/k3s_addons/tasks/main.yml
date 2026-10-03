@@ -1,0 +1,54 @@
+---
+- name: Install the Traefik ServiceLB pool configuration
+  ansible.builtin.copy:
+    src: "{{ k3s_addons_traefik_source }}"
+    dest: "{{ k3s_addons_traefik_destination }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Wait for the Traefik deployment
+  ansible.builtin.command: >-
+    k3s kubectl -n kube-system rollout status deployment/traefik
+    --timeout={{ k3s_addons_rollout_timeout }}
+  changed_when: false
+
+- name: Read Traefik pods
+  ansible.builtin.command: >-
+    k3s kubectl -n kube-system get pods
+    -l app.kubernetes.io/name=traefik -o json
+  register: k3s_addons_traefik_pods_raw
+  changed_when: false
+
+- name: Verify Traefik placement
+  vars:
+    k3s_addons_traefik_pods: "{{ (k3s_addons_traefik_pods_raw.stdout | from_json)['items'] }}"
+  ansible.builtin.assert:
+    that:
+      - k3s_addons_traefik_pods | length > 0
+      - k3s_addons_traefik_pods | map(attribute='spec.nodeName') | unique | list == [k3s_addons_expected_worker]
+      - k3s_addons_traefik_pods | map(attribute='status.phase') | unique | list == ['Running']
+    fail_msg: >-
+      Traefik must be Running only on {{ k3s_addons_expected_worker }}.
+
+- name: Read Traefik ServiceLB pods
+  ansible.builtin.command: >-
+    k3s kubectl -n kube-system get pods
+    -l svccontroller.k3s.cattle.io/svcname=traefik -o json
+  register: k3s_addons_servicelb_pods_raw
+  retries: 18
+  delay: 10
+  until: >-
+    ((k3s_addons_servicelb_pods_raw.stdout | from_json)['items'] | length) > 0
+  changed_when: false
+
+- name: Verify ServiceLB placement
+  vars:
+    k3s_addons_servicelb_pods: "{{ (k3s_addons_servicelb_pods_raw.stdout | from_json)['items'] }}"
+  ansible.builtin.assert:
+    that:
+      - k3s_addons_servicelb_pods | map(attribute='spec.nodeName') | unique | list == [k3s_addons_expected_worker]
+      - k3s_addons_servicelb_pods | map(attribute='status.phase') | unique | list == ['Running']
+    fail_msg: >-
+      Traefik ServiceLB must be Running only on
+      {{ k3s_addons_expected_worker }}.

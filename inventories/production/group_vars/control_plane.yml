@@ -1,0 +1,13 @@
+---
+server_config_yaml: |
+  node-name: {{ inventory_hostname }}
+  node-ip: {{ ansible_host }}
+  flannel-iface: {{ lan_interface }}
+  cluster-cidr: {{ k3s_cluster_cidr }}
+  service-cidr: {{ k3s_service_cidr }}
+  tls-san:
+    - {{ api_endpoint }}
+  secrets-encryption: true
+  write-kubeconfig-mode: "0600"
+  node-taint:
+    - "node-role.kubernetes.io/control-plane=true:NoSchedule"

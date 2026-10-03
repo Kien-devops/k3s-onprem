@@ -1,0 +1,8 @@
+---
+- name: Validate Kubernetes from the control plane
+  ansible.builtin.include_tasks: control_plane.yml
+  when: inventory_hostname in groups['control_plane']
+
+- name: Validate external endpoints and protected containers
+  ansible.builtin.include_tasks: load_balancers.yml
+  when: inventory_hostname in groups['load_balancers']

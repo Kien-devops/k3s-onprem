@@ -1,0 +1,62 @@
+---
+- name: Wait for HAProxy listeners
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ item }}"
+    timeout: 30
+  loop:
+    - 6443
+    - 80
+    - 443
+
+- name: Test the Kubernetes API through HAProxy
+  ansible.builtin.uri:
+    url: "https://{{ api_endpoint }}:{{ api_port }}/ping"
+    validate_certs: false
+    return_content: true
+    status_code: 200
+  register: validation_api
+
+- name: Assert the Kubernetes API response
+  ansible.builtin.assert:
+    that:
+      - validation_api.content | trim == 'pong'
+    fail_msg: HAProxy did not return the expected K3s API ping response.
+
+- name: Test smoke application over HTTP through HAProxy
+  ansible.builtin.uri:
+    url: "http://{{ api_endpoint }}/"
+    headers:
+      Host: "{{ smoke_test_hostname }}"
+    return_content: true
+    status_code: 200
+  register: validation_smoke_http
+
+- name: Test smoke application over HTTPS through HAProxy
+  ansible.builtin.uri:
+    url: "https://{{ api_endpoint }}/"
+    headers:
+      Host: "{{ smoke_test_hostname }}"
+    validate_certs: false
+    return_content: true
+    status_code: 200
+  register: validation_smoke_https
+
+- name: Assert both application entry points reach the smoke workload
+  ansible.builtin.assert:
+    that:
+      - "'K3s homelab smoke test' in validation_smoke_http.content"
+      - "'K3s homelab smoke test' in validation_smoke_https.content"
+    fail_msg: HTTP or HTTPS did not reach the smoke application through HAProxy.
+
+- name: Read containers on the load balancer
+  ansible.builtin.command: docker ps --format {% raw %}'{{.Names}}|{{.Status}}'{% endraw %}
+  register: validation_load_balancer_containers
+  changed_when: false
+
+- name: Assert HAProxy and monitoring containers remain running
+  ansible.builtin.assert:
+    that:
+      - item in validation_load_balancer_containers.stdout
+    fail_msg: Required container {{ item }} is not running on the load balancer.
+  loop: "{{ validation_required_load_balancer_containers }}"

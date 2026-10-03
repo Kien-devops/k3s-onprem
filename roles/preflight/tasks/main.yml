@@ -1,0 +1,70 @@
+---
+- name: Verify the inventory LAN address exists on the host
+  ansible.builtin.assert:
+    that:
+      - ansible_host in ansible_facts['all_ipv4_addresses']
+    fail_msg: >-
+      Inventory expects {{ ansible_host }}, but {{ inventory_hostname }} has
+      {{ ansible_facts['all_ipv4_addresses'] }}.
+
+- name: Verify the expected LAN interface exists
+  ansible.builtin.assert:
+    that:
+      - lan_interface in ansible_facts['interfaces']
+    fail_msg: >-
+      Expected LAN interface {{ lan_interface }} was not found on
+      {{ inventory_hostname }}.
+
+- name: Verify minimum memory on K3s nodes
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['memtotal_mb'] | int >= preflight_minimum_k3s_memory_mb
+    fail_msg: >-
+      {{ inventory_hostname }} has {{ ansible_facts['memtotal_mb'] }} MiB RAM;
+      at least {{ preflight_minimum_k3s_memory_mb }} MiB is required.
+  when: inventory_hostname in groups['k3s_cluster']
+
+- name: Report the DHCP lease dependency
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} currently uses DHCP address {{ ansible_host }}.
+      Update inventory and HAProxy inputs if the lease changes.
+
+- name: Read existing containers on the load balancer
+  ansible.builtin.command: docker ps --format {% raw %}'{{.Names}}|{{.Status}}'{% endraw %}
+  register: preflight_load_balancer_containers
+  changed_when: false
+  when: inventory_hostname in groups['load_balancers']
+
+- name: Protect the existing monitoring stack
+  ansible.builtin.assert:
+    that:
+      - item in preflight_load_balancer_containers.stdout
+    fail_msg: >-
+      Required pre-existing container {{ item }} is not running on
+      {{ inventory_hostname }}. Deployment is stopped to protect monitoring.
+  loop: "{{ preflight_required_monitoring_containers }}"
+  when: inventory_hostname in groups['load_balancers']
+
+- name: Disable active swap on K3s nodes
+  ansible.builtin.command: swapoff -a
+  when:
+    - inventory_hostname in groups['k3s_cluster']
+    - ansible_facts['swaptotal_mb'] | int > 0
+  changed_when: true
+  become: true
+
+- name: Disable swap entries at boot on K3s nodes
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^(?!#)(.*\s+swap\s+.*)$'
+    replace: '# k3s-disabled \1'
+  when: inventory_hostname in groups['k3s_cluster']
+  become: true
+
+- name: Load minimum K3s kernel modules
+  ansible.builtin.command: modprobe {{ item }}
+  loop: "{{ preflight_kernel_modules }}"
+  when: inventory_hostname in groups['k3s_cluster']
+  changed_when: false
+  become: true

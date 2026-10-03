@@ -1,4 +1,10 @@
 ---
 haproxy_enable_ingress: false
+haproxy_preserve_existing_ingress: true
 haproxy_config_dir: /home/monitor/k3s-haproxy
+haproxy_config_path: "{{ haproxy_config_dir }}/haproxy.cfg"
 haproxy_container_name: k3s-haproxy
+haproxy_api_port: 6443
+haproxy_ingress_ports:
+  - 80
+  - 443

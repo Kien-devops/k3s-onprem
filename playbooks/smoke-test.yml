@@ -28,15 +28,15 @@
       changed_when: false
 
 - name: Test ingress through HAProxy
-  hosts: load_balancer
+  hosts: load_balancers
   gather_facts: false
   become: false
   tasks:
     - name: Request smoke application through the ingress frontend
       ansible.builtin.uri:
-        url: http://192.168.30.45/
+        url: "http://{{ api_endpoint }}/"
         headers:
-          Host: demo.apps.k3s.home.arpa
+          Host: "{{ smoke_test_hostname }}"
         return_content: true
         status_code: 200
       register: smoke_http
@@ -45,3 +45,4 @@
       ansible.builtin.assert:
         that:
           - "'K3s homelab smoke test' in smoke_http.content"
+        fail_msg: The smoke application was not reachable through HAProxy and Traefik.

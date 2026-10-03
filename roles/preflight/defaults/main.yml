@@ -1,0 +1,8 @@
+---
+preflight_minimum_k3s_memory_mb: 1024
+preflight_required_monitoring_containers:
+  - power-grafana
+  - power-prometheus
+preflight_kernel_modules:
+  - overlay
+  - br_netfilter

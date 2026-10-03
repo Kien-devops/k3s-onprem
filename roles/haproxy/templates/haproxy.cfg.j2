@@ -20,7 +20,7 @@ backend k3s_api_backend
     option tcp-check
     server server-tang2 {{ haproxy_api_backend }}:6443 check inter 3s fall 3 rise 2
 
-{% if haproxy_enable_ingress %}
+{% if haproxy_render_ingress %}
 frontend application_http
     bind *:80
     default_backend application_http_backend

@@ -1,24 +1,60 @@
 ---
-- name: Minimal preflight
-  ansible.builtin.import_playbook: preflight.yml
+- name: 1 | Preflight and minimum host baseline
+  hosts: all
+  gather_facts: true
+  become: false
+  tags: [preflight]
+  roles:
+    - role: preflight
 
-- name: Minimal host baseline
-  ansible.builtin.import_playbook: baseline.yml
+- name: 2 | Establish the stable Kubernetes API endpoint
+  hosts: load_balancers
+  gather_facts: false
+  become: false
+  tags: [haproxy, api]
+  vars:
+    haproxy_enable_ingress: false
+  roles:
+    - role: haproxy
 
-- name: Start stable K3s API endpoint
-  ansible.builtin.import_playbook: haproxy-api.yml
+- name: 3 | Converge the K3s control plane
+  hosts: control_plane
+  gather_facts: true
+  become: true
+  tags: [k3s, control_plane]
+  roles:
+    - role: k3s_control_plane
 
-- name: Deploy K3s cluster
-  ansible.builtin.import_playbook: cluster.yml
+- name: 4 | Converge K3s workers
+  hosts: workers
+  gather_facts: true
+  become: true
+  tags: [k3s, workers]
+  roles:
+    - role: k3s_worker
 
-- name: Configure worker ingress placement
-  ansible.builtin.import_playbook: addons.yml
+- name: 5 | Converge cluster addons
+  hosts: control_plane
+  gather_facts: false
+  become: true
+  tags: [k3s, addons]
+  roles:
+    - role: k3s_addons
 
-- name: Enable application ingress endpoint
-  ansible.builtin.import_playbook: haproxy-ingress.yml
+- name: 6 | Enable the application ingress entry points
+  hosts: load_balancers
+  gather_facts: false
+  become: false
+  tags: [haproxy, ingress]
+  vars:
+    haproxy_enable_ingress: true
+  roles:
+    - role: haproxy
 
-- name: Deploy and verify smoke test
+- name: 7 | Deploy and test the smoke application
   ansible.builtin.import_playbook: smoke-test.yml
+  tags: [smoke_test]
 
-- name: Validate lab
+- name: 8 | Validate the complete homelab
   ansible.builtin.import_playbook: validate.yml
+  tags: [validation]

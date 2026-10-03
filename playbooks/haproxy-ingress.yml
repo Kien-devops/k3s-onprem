@@ -1,9 +1,0 @@
----
-- name: Enable HAProxy application ingress
-  hosts: load_balancer
-  gather_facts: false
-  become: false
-  vars:
-    haproxy_enable_ingress: true
-  roles:
-    - role: haproxy

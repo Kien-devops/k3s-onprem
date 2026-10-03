@@ -1,63 +1,83 @@
 ---
-- name: Create HAProxy configuration directory
+- name: Create the HAProxy configuration directory
   ansible.builtin.file:
     path: "{{ haproxy_config_dir }}"
     state: directory
     mode: "0755"
 
-- name: Render HAProxy configuration
-  ansible.builtin.template:
-    src: haproxy.cfg.j2
-    dest: "{{ haproxy_config_dir }}/haproxy.cfg"
-    mode: "0644"
-  register: haproxy_config
-
-- name: Check pinned HAProxy image
+- name: Inspect the pinned HAProxy image
   ansible.builtin.command: docker image inspect {{ haproxy_image }}
   register: haproxy_image_check
   failed_when: false
   changed_when: false
 
-- name: Pull pinned HAProxy image
+- name: Pull the pinned HAProxy image when absent
   ansible.builtin.command: docker pull {{ haproxy_image }}
   when: haproxy_image_check.rc != 0
   changed_when: true
 
-- name: Validate HAProxy configuration
-  ansible.builtin.command: >-
-    docker run --rm
-    -v {{ haproxy_config_dir }}/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
-    {{ haproxy_image }}
-    haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
-  changed_when: false
+- name: Check for an existing HAProxy configuration
+  ansible.builtin.stat:
+    path: "{{ haproxy_config_path }}"
+  register: haproxy_config_stat
 
-- name: Check HAProxy container
-  ansible.builtin.command: docker container inspect {{ haproxy_container_name }}
+- name: Read the existing HAProxy configuration
+  ansible.builtin.slurp:
+    path: "{{ haproxy_config_path }}"
+  register: haproxy_existing_config
+  when: haproxy_config_stat.stat.exists
+
+- name: Determine whether application ingress must be rendered
+  ansible.builtin.set_fact:
+    haproxy_render_ingress: >-
+      {{
+        haproxy_enable_ingress | bool
+        or
+        (
+          haproxy_preserve_existing_ingress | bool
+          and haproxy_config_stat.stat.exists
+          and 'frontend application_http' in
+              (haproxy_existing_config.content | default('') | b64decode)
+        )
+      }}
+
+- name: Render and validate the HAProxy configuration
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: "{{ haproxy_config_path }}"
+    mode: "0644"
+    validate: >-
+      docker run --rm
+      -v %s:/usr/local/etc/haproxy/haproxy.cfg:ro
+      {{ haproxy_image }}
+      haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
+  notify: Recreate HAProxy container
+
+- name: Inspect the HAProxy container
+  ansible.builtin.command: >-
+    docker container inspect
+    --format={% raw %}'{{.State.Running}}'{% endraw %}
+    {{ haproxy_container_name }}
   register: haproxy_container_check
   failed_when: false
   changed_when: false
 
-- name: Remove HAProxy container when configuration changed
-  ansible.builtin.command: docker rm -f {{ haproxy_container_name }}
-  when:
-    - haproxy_container_check.rc == 0
-    - haproxy_config.changed
+- name: Schedule HAProxy creation when it is absent or stopped
+  ansible.builtin.debug:
+    msg: HAProxy container will be created from the validated configuration.
+  when: >-
+    haproxy_container_check.rc != 0 or
+    haproxy_container_check.stdout != 'true'
   changed_when: true
+  notify: Recreate HAProxy container
 
-- name: Start HAProxy container
-  ansible.builtin.command: >-
-    docker run -d
-    --name {{ haproxy_container_name }}
-    --restart unless-stopped
-    --network host
-    --user 0:0
-    -v {{ haproxy_config_dir }}/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
-    {{ haproxy_image }}
-  when: haproxy_container_check.rc != 0 or haproxy_config.changed
-  changed_when: true
+- name: Apply pending HAProxy lifecycle changes
+  ansible.builtin.meta: flush_handlers
 
-- name: Wait for Kubernetes API frontend
+- name: Wait for HAProxy frontends
   ansible.builtin.wait_for:
     host: 127.0.0.1
-    port: 6443
+    port: "{{ item }}"
     timeout: 30
+  loop: >-
+    {{ [haproxy_api_port] + (haproxy_ingress_ports if haproxy_render_ingress else []) }}

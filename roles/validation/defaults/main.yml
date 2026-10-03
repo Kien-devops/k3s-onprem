@@ -1,0 +1,13 @@
+---
+validation_control_plane_name: "{{ groups['control_plane'][0] }}"
+validation_worker_name: "{{ groups['workers'][0] }}"
+validation_node_ready_timeout: 120s
+validation_smoke_namespace: lab-demo
+validation_smoke_label: app=nginx-smoke
+validation_required_control_plane_containers:
+  - code-frontend-1
+  - code-backend-1
+validation_required_load_balancer_containers:
+  - k3s-haproxy
+  - power-grafana
+  - power-prometheus

@@ -1,0 +1,3 @@
+---
+ansible_user: node
+lan_interface: wlx58044f3fedb4

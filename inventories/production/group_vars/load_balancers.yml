@@ -1,0 +1,7 @@
+---
+ansible_connection: local
+ansible_user: monitor
+
+haproxy_image: haproxy:3.2.24-alpine3.24
+haproxy_api_backend: "{{ hostvars[groups['control_plane'][0]].ansible_host }}"
+haproxy_ingress_backend: "{{ hostvars[groups['workers'][0]].ansible_host }}"

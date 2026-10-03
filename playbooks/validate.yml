@@ -1,43 +1,14 @@
 ---
-- name: Validate cluster state
-  hosts: server
+- name: Validate Kubernetes and protected control-plane workloads
+  hosts: control_plane
   gather_facts: false
   become: true
-  tasks:
-    - name: Get nodes
-      ansible.builtin.command: k3s kubectl get nodes -o wide
-      register: nodes
-      changed_when: false
+  roles:
+    - role: validation
 
-    - name: Show nodes
-      ansible.builtin.debug:
-        var: nodes.stdout_lines
-
-    - name: Verify smoke pod placement
-      ansible.builtin.command: >-
-        k3s kubectl -n lab-demo get pods
-        -l app=nginx-smoke -o jsonpath={.items[0].spec.nodeName}
-      register: smoke_node
-      changed_when: false
-
-    - name: Assert user workload runs on tang4
-      ansible.builtin.assert:
-        that:
-          - smoke_node.stdout == 'server-tang4'
-
-- name: Verify monitoring remains healthy
-  hosts: load_balancer
+- name: Validate HAProxy, application traffic, and monitoring
+  hosts: load_balancers
   gather_facts: false
   become: false
-  tasks:
-    - name: Check monitoring and HAProxy containers
-      ansible.builtin.command: docker ps --format {% raw %}'{{.Names}}|{{.Status}}|{{.Ports}}'{% endraw %}
-      register: final_containers
-      changed_when: false
-
-    - name: Assert required containers are running
-      ansible.builtin.assert:
-        that:
-          - "'power-grafana' in final_containers.stdout"
-          - "'power-prometheus' in final_containers.stdout"
-          - "'k3s-haproxy' in final_containers.stdout"
+  roles:
+    - role: validation

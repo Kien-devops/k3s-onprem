@@ -1,0 +1,72 @@
+---
+- name: Deploy the public-registry nginx application
+  hosts: server
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Create the lab manifest directory
+      ansible.builtin.file:
+        path: /opt/k3s-lab/manifests
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy the public application manifest
+      ansible.builtin.copy:
+        src: ../manifests/public-app.yaml
+        dest: /opt/k3s-lab/manifests/public-app.yaml
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Apply the public application manifest
+      ansible.builtin.command: >-
+        k3s kubectl apply
+        -f /opt/k3s-lab/manifests/public-app.yaml
+      register: public_app_apply
+      changed_when: >-
+        ' created' in public_app_apply.stdout or
+        ' configured' in public_app_apply.stdout
+
+    - name: Wait for both nginx replicas
+      ansible.builtin.command: >-
+        k3s kubectl -n public-app rollout status deployment/nginx
+        --timeout=180s
+      changed_when: false
+
+    - name: Read nginx pod state
+      ansible.builtin.command: >-
+        k3s kubectl -n public-app get pods -l app=nginx -o json
+      register: public_app_pods_raw
+      changed_when: false
+
+    - name: Verify both replicas run on tang4
+      vars:
+        public_app_pods: "{{ (public_app_pods_raw.stdout | from_json)['items'] }}"
+      ansible.builtin.assert:
+        that:
+          - public_app_pods | length == 2
+          - public_app_pods | map(attribute='spec.nodeName') | unique | list == ['server-tang4']
+          - public_app_pods | map(attribute='status.phase') | unique | list == ['Running']
+          - public_app_pods | map(attribute='status.containerStatuses') | flatten | map(attribute='ready') | unique | list == [true]
+
+- name: Test the public application through the existing HAProxy route
+  hosts: load_balancers
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Request nginx through HAProxy and Traefik
+      ansible.builtin.uri:
+        url: "http://{{ api_endpoint }}/"
+        headers:
+          Host: "{{ public_app_hostname }}"
+        return_content: true
+        status_code: 200
+      register: public_app_http
+
+    - name: Verify the nginx response
+      ansible.builtin.assert:
+        that:
+          - "'Welcome to nginx!' in public_app_http.content"
+        fail_msg: The public nginx application was not reachable through HAProxy and Traefik.

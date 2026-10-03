@@ -1,0 +1,19 @@
+---
+ansible_port: 22
+ansible_become: true
+ansible_ssh_private_key_file: /home/monitor/.ssh/k3s_ansible_ed25519
+
+k3s_version: v1.36.4+k3s1
+k3s_cluster_cidr: 10.42.0.0/16
+k3s_service_cidr: 10.43.0.0/16
+cluster_context: k3s-homelab
+user_kubectl: false
+
+api_endpoint: "{{ hostvars[groups['load_balancers'][0]].ansible_host }}"
+api_port: 6443
+kubeconfig: /home/monitor/.kube/config
+
+k3s_control_plane_name: "{{ groups['control_plane'][0] }}"
+k3s_worker_name: "{{ groups['workers'][0] }}"
+smoke_test_hostname: demo.apps.k3s.home.arpa
+public_app_hostname: nginx.apps.k3s.home.arpa

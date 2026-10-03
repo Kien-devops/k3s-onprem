@@ -1,9 +1,0 @@
----
-- name: Configure HAProxy API endpoint only
-  hosts: load_balancer
-  gather_facts: false
-  become: false
-  vars:
-    haproxy_enable_ingress: false
-  roles:
-    - role: haproxy
