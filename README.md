@@ -128,6 +128,8 @@ Control plane có taint `node-role.kubernetes.io/control-plane=true:NoSchedule`,
 |       |-- service.yml
 |       `-- ingress.yml
 `-- docs/
+    |-- application-cicd.md
+    |-- app1-microservices.md
     |-- architecture.md
     |-- deployment.md
     `-- troubleshooting.md
@@ -370,6 +372,37 @@ Endpoint ổn định không đồng nghĩa với HA. Nếu tang2 hỏng, HAProx
 
 Smoke test trả một chuỗi được kiểm soát và được `site.yml` dùng làm health proof. Demo app dùng public image, hai replicas và các manifest tách riêng để học resource model. Demo app hỏng không đồng nghĩa cluster ingress hỏng; smoke test giúp tách hai loại lỗi này.
 
+## Ứng dụng microservices `app1` đang chạy trên cluster
+
+Ngoài smoke workload và demo Nginx do repository này quản lý, cluster đang chạy ứng dụng microservices từ repository độc lập [`Kien-devops/app1`](https://github.com/Kien-devops/app1):
+
+| Thành phần | Trạng thái triển khai |
+| --- | --- |
+| Namespace | `microservices-demo` |
+| Frontend | 2 replicas, NGINX unprivileged |
+| Backend | `auth-service`, `user-service`, `product-service` |
+| Worker | Toàn bộ application Pod chạy trên `server-tang4` |
+| Registry | `ghcr.io/kien-devops/app1/*:<full-git-sha>` |
+| Ingress | `app1.onprem.site`, class `traefik` |
+| Public URL | `https://app1.onprem.site` qua Cloudflare Tunnel |
+| CD runner | `server-tang3-k3s-deploy` trên `server-tang3` |
+
+Luồng traffic:
+
+```text
+Internet
+  -> Cloudflare Tunnel
+  -> HAProxy server-tang3 :80
+  -> ServiceLB / Traefik server-tang4
+  -> Ingress app1.onprem.site
+  -> frontend hoặc API ClusterIP Service
+  -> application Pods
+```
+
+`k3s-onprem` sở hữu vòng đời platform: node, K3s, HAProxy, Traefik và ServiceLB. Repository `app1` sở hữu source code, image, namespace-scoped workload manifests và CI/CD release. Vì vậy `playbooks/site.yml` không deploy hoặc rollback `app1`.
+
+Xem mô tả workload, routing, security boundary và cách kiểm tra tại [docs/app1-microservices.md](docs/app1-microservices.md). Hướng dẫn tổng quát để tích hợp thêm application nằm tại [docs/application-cicd.md](docs/application-cicd.md).
+
 ## Điều kiện trước khi triển khai
 
 - Ba máy truy cập nhau qua LAN `192.168.30.0/24`.
@@ -425,3 +458,5 @@ Chi tiết từng bước nằm trong [docs/deployment.md](docs/deployment.md).
 - [Kiến trúc và luồng hệ thống](docs/architecture.md)
 - [Quy trình triển khai](docs/deployment.md)
 - [Troubleshooting theo từng lớp](docs/troubleshooting.md)
+- [Ứng dụng microservices app1 đang chạy](docs/app1-microservices.md)
+- [Mẫu tích hợp application CI/CD](docs/application-cicd.md)
