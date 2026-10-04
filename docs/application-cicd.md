@@ -48,7 +48,7 @@ Deployment -> Pods trên server-tang4
 Service -> Ingress -> Traefik
         |
         v
-http://myapp.onprem.site
+http://app1.onprem.site
 ```
 
 Tang3 chỉ thực hiện phần deploy nhẹ bằng `kubectl`. Docker build chạy trên GitHub-hosted runner để tránh cạnh tranh CPU, RAM và disk với HAProxy, Prometheus và Grafana.
@@ -109,7 +109,7 @@ Ví dụ dưới đây giả định:
 - container name: `app`;
 - container port: `8080`;
 - health endpoint: `/health`;
-- hostname: `myapp.onprem.site`.
+- hostname: `app1.onprem.site`.
 
 ### `k8s/deployment.yml`
 
@@ -202,7 +202,7 @@ spec:
   ingressClassName: traefik
 
   rules:
-    - host: myapp.onprem.site
+    - host: app1.onprem.site
       http:
         paths:
           - path: /
@@ -223,7 +223,7 @@ Client
   -> 192.168.30.35:80/443
   -> ServiceLB
   -> Traefik
-  -> Ingress myapp.onprem.site
+  -> Ingress app1.onprem.site
   -> ClusterIP Service my-app
   -> my-app Pods
 ```
@@ -450,7 +450,7 @@ jobs:
       - name: Smoke test through HAProxy
         run: |
           curl --fail --show-error --silent \
-            -H 'Host: myapp.onprem.site' \
+            -H 'Host: app1.onprem.site' \
             http://192.168.30.45/health
 ```
 
@@ -500,14 +500,14 @@ Nếu GHCR package để private:
 Nếu chưa có DNS nội bộ, thêm trên máy Windows:
 
 ```text
-192.168.30.45 myapp.onprem.site
+192.168.30.45 app1.onprem.site
 ```
 
 Kiểm tra:
 
 ```powershell
-ping -n 1 myapp.onprem.site
-curl.exe http://myapp.onprem.site/
+ping -n 1 app1.onprem.site
+curl.exe http://app1.onprem.site/
 ```
 
 Hosts entry chỉ giải quyết hostname. Client vẫn cần route tới LAN `192.168.30.0/24`.
