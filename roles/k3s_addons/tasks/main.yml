@@ -7,6 +7,14 @@
     group: root
     mode: "0644"
 
+- name: Wait for the K3s Helm controller to create Traefik
+  ansible.builtin.command: k3s kubectl -n kube-system get deployment traefik
+  register: k3s_addons_traefik_deployment
+  changed_when: false
+  retries: 30
+  delay: 5
+  until: k3s_addons_traefik_deployment.rc == 0
+
 - name: Wait for the Traefik deployment
   ansible.builtin.command: >-
     k3s kubectl -n kube-system rollout status deployment/traefik
