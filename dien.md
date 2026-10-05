@@ -1,6 +1,8 @@
-# Giám Sát Điện Năng Tiêu Thụ Real-time (Power Monitoring) - K3s Cluster
+# Giám sát điện năng real-time cho on-prem homelab
 
-Tài liệu kỹ thuật chi tiết về hệ thống đo đạc, thu thập và trực quan hóa điện năng tiêu thụ (Watt / kWh / Chi phí) theo thời gian thực cho cụm server On-Premise K3s.
+Tài liệu kỹ thuật về hệ thống đo đạc, thu thập và trực quan hóa điện năng tiêu thụ (Watt / kWh / chi phí) cho các máy trong on-prem homelab.
+
+> `server-tang2` là một power-monitoring target độc lập, không phải thành viên K3s cluster. Topology K3s hiện tại chỉ dùng tang3 làm edge/automation và tang4 làm single-node K3s server.
 
 ---
 
@@ -8,7 +10,7 @@ Tài liệu kỹ thuật chi tiết về hệ thống đo đạc, thu thập và
 
 | Server | Hostname | IP (Tailscale) | Cấu hình phần cứng | Công suất CPU (Intel RAPL) | Công suất thực tế tại ổ cắm (Wall Power) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **server-tang2** | `node1` | `100.69.133.58` | • **Mainboard**: X99H<br>• **CPU**: Intel Xeon E5-2678 v3 (12C/24T, TDP 120W)<br>• **RAM**: 16GB (2x 8GB DDR3 1600)<br>• **SSD**: 128GB SATA TXRUI X550<br>• **VGA**: NVIDIA GeForce 210 (GT218 - card xuất hình) | **~11.8 W** (Idle)<br>• Cảm biến: `package-0`<br>• Nhiệt độ: ~41°C | **~55W – 65W** (Idle)<br>• Khi Full load 100%: ~160W – 180W<br>*(Bao gồm CPU + GT210 11W + Main/quạt/RAM 25W + hao phí nguồn ATX)* |
+| **server-tang2** | `node-X99` | `100.98.92.34` | • **Mainboard**: X99H<br>• **CPU**: Intel Xeon E5-2678 v3 (12C/24T, TDP 120W)<br>• **RAM**: 16GB (2x 8GB DDR3 1600)<br>• **SSD**: 128GB SATA TXRUI X550<br>• **VGA**: NVIDIA GeForce 210 (GT218 - card xuất hình) | **~11.8 W** (Idle)<br>• Cảm biến: `package-0`<br>• Nhiệt độ: ~41°C | **~55W – 65W** (Idle)<br>• Khi Full load 100%: ~160W – 180W<br>*(Bao gồm CPU + GT210 11W + Main X99/quạt/RAM 25W + hao phí nguồn ATX)* |
 | **server-tang3** | `monitor` | `100.112.150.56` | • **Thiết bị**: Laptop HP ProBook 430 G3<br>• **CPU**: Intel Core i3-6100U (2C/4T, TDP 15W)<br>• **RAM**: 8GB (2x 4GB DDR3L 1600)<br>• **SSD**: 120GB Kingston SA400<br>• **VGA**: Intel HD Graphics 520 (onboard) | **~3.4 W** (Idle)<br>• Core: 2.89W<br>• DRAM: 0.63W | **~10W – 12W** (Idle)<br>• Khi Full load 100%: ~20W – 25W<br>*(Laptop chip U siêu tiết kiệm điện khi tắt/gập màn hình)* |
 | **server-tang4** | `node-X79` | `100.72.138.65` | • **Mainboard**: X79<br>• **CPU**: Intel Xeon E5-2696 v2 (12C/24T, TDP 115W)<br>• **RAM**: 32GB DDR3 ECC REG<br>• **SSD**: 120GB Kingston SV300<br>• **VGA**: NVIDIA GeForce 210 (GT218 - card xuất hình) | **~24.5 W** (Idle)<br>• Core: ~15W<br>• Nhiệt độ: ~37°C | **~75W – 80W** (Idle)<br>• Khi Full load 100%: ~160W – 180W<br>*(Xeon v2 22nm ăn điện idle cao hơn v3 + GT210 + Main/quạt/32GB RAM)* |
 
@@ -76,7 +78,7 @@ Tài liệu kỹ thuật chi tiết về hệ thống đo đạc, thu thập và
   👉 **[http://100.112.150.56:9090/targets](http://100.112.150.56:9090/targets)**
 
 * **Raw Metrics Endpoint từng node**:
-  - `server-tang2`: [http://100.69.133.58:9101/metrics](http://100.69.133.58:9101/metrics)
+  - `server-tang2`: [http://100.98.92.34:9101/metrics](http://100.98.92.34:9101/metrics)
   - `server-tang3`: [http://100.112.150.56:9101/metrics](http://100.112.150.56:9101/metrics)
   - `server-tang4`: [http://100.72.138.65:9101/metrics](http://100.72.138.65:9101/metrics)
 
