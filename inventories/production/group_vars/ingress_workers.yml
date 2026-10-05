@@ -1,0 +1,10 @@
+---
+k3s_worker_node_labels:
+  - "onprem.site/ingress=true"
+  - "svccontroller.k3s.cattle.io/enablelb=true"
+  - "svccontroller.k3s.cattle.io/lbpool=ingress"
+
+k3s_worker_required_labels:
+  onprem.site/ingress: "true"
+  svccontroller.k3s.cattle.io/enablelb: "true"
+  svccontroller.k3s.cattle.io/lbpool: ingress

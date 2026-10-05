@@ -26,16 +26,22 @@ frontend application_http
     default_backend application_http_backend
 
 backend application_http_backend
+    balance roundrobin
     option tcp-check
-    server {{ k3s_workload_node_name }} {{ haproxy_ingress_backend }}:80 check inter 3s fall 3 rise 2
+{% for node_name in haproxy_ingress_backend_nodes %}
+    server {{ node_name }} {{ hostvars[node_name].ansible_host }}:80 check inter 3s fall 3 rise 2
+{% endfor %}
 
 frontend application_https
     bind *:443
     default_backend application_https_backend
 
 backend application_https_backend
+    balance roundrobin
     option tcp-check
-    server {{ k3s_workload_node_name }} {{ haproxy_ingress_backend }}:443 check inter 3s fall 3 rise 2
+{% for node_name in haproxy_ingress_backend_nodes %}
+    server {{ node_name }} {{ hostvars[node_name].ansible_host }}:443 check inter 3s fall 3 rise 2
+{% endfor %}
 {% endif %}
 
 listen local_stats

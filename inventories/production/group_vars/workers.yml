@@ -9,6 +9,3 @@ agent_config_yaml: |
     - "{{ label }}"
   {% endfor %}
   {% endif %}
-
-k3s_worker_node_labels: []
-k3s_worker_required_labels: {}

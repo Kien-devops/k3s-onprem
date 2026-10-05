@@ -15,6 +15,6 @@ kubeconfig: /home/monitor/.kube/config
 
 k3s_control_plane_name: "{{ groups['control_plane'][0] }}"
 k3s_workload_node_name: server-tang4
-k3s_ingress_node_name: "{{ k3s_workload_node_name }}"
+k3s_ingress_node_names: "{{ groups['ingress_workers'] }}"
 smoke_test_hostname: demo.apps.k3s.home.arpa
 public_app_hostname: nginx.onprem.site

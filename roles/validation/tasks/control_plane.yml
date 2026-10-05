@@ -51,18 +51,20 @@
     fail_msg: Worker {{ item }} is missing or is not schedulable.
   loop: "{{ validation_worker_names }}"
 
-- name: Assert the ingress worker is enabled for ServiceLB
+- name: Assert every ingress worker is enabled for ServiceLB
   vars:
     validation_node_items: "{{ (validation_nodes_raw.stdout | from_json)['items'] }}"
     validation_ingress_node: >-
       {{ validation_node_items
-         | selectattr('metadata.name', 'equalto', validation_ingress_node_name)
+         | selectattr('metadata.name', 'equalto', item)
          | first }}
   ansible.builtin.assert:
     that:
+      - validation_ingress_node.metadata.labels['onprem.site/ingress'] == 'true'
       - validation_ingress_node.metadata.labels['svccontroller.k3s.cattle.io/enablelb'] == 'true'
       - validation_ingress_node.metadata.labels['svccontroller.k3s.cattle.io/lbpool'] == 'ingress'
-    fail_msg: ServiceLB placement labels are not isolated to {{ validation_ingress_node_name }}.
+    fail_msg: Ingress and ServiceLB labels are missing from {{ item }}.
+  loop: "{{ validation_ingress_node_names }}"
 
 - name: Assert compute-only workers are not enabled for ServiceLB
   vars:
@@ -76,7 +78,7 @@
       - validation_worker_node.metadata.labels['svccontroller.k3s.cattle.io/enablelb'] is not defined
       - validation_worker_node.metadata.labels['svccontroller.k3s.cattle.io/lbpool'] is not defined
     fail_msg: Compute worker {{ item }} must not expose the ServiceLB ingress ports.
-  loop: "{{ validation_worker_names | difference([validation_ingress_node_name]) }}"
+  loop: "{{ validation_worker_names | difference(validation_ingress_node_names) }}"
 
 - name: Read Traefik pods
   ansible.builtin.command: >-
@@ -85,15 +87,17 @@
   register: validation_traefik_raw
   changed_when: false
 
-- name: Assert Traefik is Running on the workload node
+- name: Assert Traefik is Running across all ingress workers
   vars:
     validation_traefik_pods: "{{ (validation_traefik_raw.stdout | from_json)['items'] }}"
   ansible.builtin.assert:
     that:
-      - validation_traefik_pods | length > 0
-      - validation_traefik_pods | map(attribute='spec.nodeName') | unique | list == [validation_workload_node_name]
+      - validation_traefik_pods | length == validation_ingress_node_names | length
+      - >-
+        (validation_traefik_pods | map(attribute='spec.nodeName') | unique | sort | list)
+        == (validation_ingress_node_names | sort)
       - validation_traefik_pods | map(attribute='status.phase') | unique | list == ['Running']
-    fail_msg: Traefik is not Running exclusively on the workload node.
+    fail_msg: Traefik does not have one Running replica on every ingress worker.
 
 - name: Read Traefik ServiceLB pods
   ansible.builtin.command: >-
@@ -102,15 +106,17 @@
   register: validation_servicelb_raw
   changed_when: false
 
-- name: Assert ServiceLB is Running on the workload node
+- name: Assert ServiceLB is Running across all ingress workers
   vars:
     validation_servicelb_pods: "{{ (validation_servicelb_raw.stdout | from_json)['items'] }}"
   ansible.builtin.assert:
     that:
-      - validation_servicelb_pods | length > 0
-      - validation_servicelb_pods | map(attribute='spec.nodeName') | unique | list == [validation_workload_node_name]
+      - validation_servicelb_pods | length == validation_ingress_node_names | length
+      - >-
+        (validation_servicelb_pods | map(attribute='spec.nodeName') | unique | sort | list)
+        == (validation_ingress_node_names | sort)
       - validation_servicelb_pods | map(attribute='status.phase') | unique | list == ['Running']
-    fail_msg: Traefik ServiceLB is not Running exclusively on the workload node.
+    fail_msg: Traefik ServiceLB is not Running on every ingress worker.
 
 - name: Read smoke-test pods
   ansible.builtin.command: >-

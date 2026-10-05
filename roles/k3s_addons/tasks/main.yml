@@ -7,7 +7,7 @@
     group: root
     mode: "0644"
 
-- name: Wait for the K3s Helm controller to apply Traefik placement
+- name: Wait for the K3s Helm controller to apply the highly available Traefik placement
   ansible.builtin.command: k3s kubectl -n kube-system get deployment traefik -o json
   register: k3s_addons_traefik_deployment
   changed_when: false
@@ -16,7 +16,10 @@
   until:
     - k3s_addons_traefik_deployment.rc == 0
     - >-
-      ((k3s_addons_traefik_deployment.stdout | from_json)['spec']['template']['spec'].get('nodeSelector', {})).get('kubernetes.io/hostname', '') == k3s_addons_expected_node
+      ((k3s_addons_traefik_deployment.stdout | from_json)['spec'].get('replicas', 0) | int)
+      == (k3s_addons_expected_nodes | length)
+    - >-
+      ((k3s_addons_traefik_deployment.stdout | from_json)['spec']['template']['spec'].get('nodeSelector', {})).get('onprem.site/ingress', '') == 'true'
 
 - name: Wait for the Traefik deployment
   ansible.builtin.command: >-
@@ -32,8 +35,11 @@
   retries: 18
   delay: 5
   until:
-    - ((k3s_addons_traefik_pods_raw.stdout | from_json)['items'] | length) > 0
-    - ((k3s_addons_traefik_pods_raw.stdout | from_json)['items'] | map(attribute='spec.nodeName') | unique | list) == [k3s_addons_expected_node]
+    - ((k3s_addons_traefik_pods_raw.stdout | from_json)['items'] | length) == (k3s_addons_expected_nodes | length)
+    - >-
+      ((k3s_addons_traefik_pods_raw.stdout | from_json)['items']
+      | map(attribute='spec.nodeName') | unique | sort | list)
+      == (k3s_addons_expected_nodes | sort)
     - ((k3s_addons_traefik_pods_raw.stdout | from_json)['items'] | map(attribute='status.phase') | unique | list) == ['Running']
   changed_when: false
 
@@ -42,11 +48,14 @@
     k3s_addons_traefik_pods: "{{ (k3s_addons_traefik_pods_raw.stdout | from_json)['items'] }}"
   ansible.builtin.assert:
     that:
-      - k3s_addons_traefik_pods | length > 0
-      - k3s_addons_traefik_pods | map(attribute='spec.nodeName') | unique | list == [k3s_addons_expected_node]
+      - k3s_addons_traefik_pods | length == k3s_addons_expected_nodes | length
+      - >-
+        (k3s_addons_traefik_pods | map(attribute='spec.nodeName') | unique | sort | list)
+        == (k3s_addons_expected_nodes | sort)
       - k3s_addons_traefik_pods | map(attribute='status.phase') | unique | list == ['Running']
     fail_msg: >-
-      Traefik must be Running only on {{ k3s_addons_expected_node }}.
+      Traefik must have one Running replica on every ingress worker:
+      {{ k3s_addons_expected_nodes | join(', ') }}.
 
 - name: Read Traefik ServiceLB pods
   ansible.builtin.command: >-
@@ -56,8 +65,11 @@
   retries: 18
   delay: 5
   until:
-    - ((k3s_addons_servicelb_pods_raw.stdout | from_json)['items'] | length) > 0
-    - ((k3s_addons_servicelb_pods_raw.stdout | from_json)['items'] | map(attribute='spec.nodeName') | unique | list) == [k3s_addons_expected_node]
+    - ((k3s_addons_servicelb_pods_raw.stdout | from_json)['items'] | length) == (k3s_addons_expected_nodes | length)
+    - >-
+      ((k3s_addons_servicelb_pods_raw.stdout | from_json)['items']
+      | map(attribute='spec.nodeName') | unique | sort | list)
+      == (k3s_addons_expected_nodes | sort)
     - ((k3s_addons_servicelb_pods_raw.stdout | from_json)['items'] | map(attribute='status.phase') | unique | list) == ['Running']
   changed_when: false
 
@@ -66,8 +78,11 @@
     k3s_addons_servicelb_pods: "{{ (k3s_addons_servicelb_pods_raw.stdout | from_json)['items'] }}"
   ansible.builtin.assert:
     that:
-      - k3s_addons_servicelb_pods | map(attribute='spec.nodeName') | unique | list == [k3s_addons_expected_node]
+      - k3s_addons_servicelb_pods | length == k3s_addons_expected_nodes | length
+      - >-
+        (k3s_addons_servicelb_pods | map(attribute='spec.nodeName') | unique | sort | list)
+        == (k3s_addons_expected_nodes | sort)
       - k3s_addons_servicelb_pods | map(attribute='status.phase') | unique | list == ['Running']
     fail_msg: >-
-      Traefik ServiceLB must be Running only on
-      {{ k3s_addons_expected_node }}.
+      Traefik ServiceLB must be Running on every ingress worker:
+      {{ k3s_addons_expected_nodes | join(', ') }}.

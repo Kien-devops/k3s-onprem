@@ -42,7 +42,7 @@ HAProxy 192.168.30.45:6443
 K3s API server-tang2
         |
         v
-Deployment -> Pods trên server-tang4
+Deployment -> Pods trải đều trên server-tang1 và server-tang4
         |
         v
 Service -> Ingress -> Traefik
@@ -61,7 +61,7 @@ Tang3 chỉ thực hiện phần deploy nhẹ bằng `kubectl`. Docker build ch�
 
 Quản lý:
 
-- K3s control plane trên tang2, ingress worker trên tang4 và compute worker trên tang1;
+- K3s control plane trên tang2 và hai ingress/application worker tang1, tang4;
 - HAProxy;
 - Traefik và ServiceLB;
 - cluster-level configuration;
@@ -137,8 +137,13 @@ spec:
       labels:
         app: my-app
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: server-tang4
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: my-app
 
       containers:
         - name: app
@@ -438,14 +443,16 @@ jobs:
             deployment/my-app \
             --timeout=180s
 
-      - name: Verify pods run on tang4
+      - name: Verify pods are spread across both workers
         shell: bash
         run: |
           set -euo pipefail
-          test "$(kubectl -n my-app get pods \
+          actual_nodes="$(kubectl -n my-app get pods \
             -l app=my-app \
             -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}' \
-            | sort -u)" = "server-tang4"
+            | sort -u)"
+          expected_nodes=$'server-tang1\nserver-tang4'
+          test "$actual_nodes" = "$expected_nodes"
 
       - name: Smoke test through HAProxy
         run: |
@@ -482,7 +489,7 @@ Không dùng duy nhất tag `latest`. Git commit SHA giúp truy vết chính xá
 
 Phù hợp nhất để bắt đầu trong homelab:
 
-- tang4 pull trực tiếp từ GHCR;
+- tang1 và tang4 pull trực tiếp từ GHCR;
 - không cần `imagePullSecret`;
 - không lưu registry credential trong cluster.
 

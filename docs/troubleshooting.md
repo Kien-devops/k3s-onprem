@@ -37,12 +37,13 @@ Direct tang2 `pong` nhưng tang3 fail nghĩa là lỗi HAProxy/listener/route. C
 ## Worker join
 
 ```bash
-# tang4
+# tang1 hoặc tang4
 sudo systemctl status k3s-agent --no-pager
 sudo journalctl -u k3s-agent --since '-15 min' --no-pager
 
 # tang3
-kubectl --kubeconfig /home/monitor/.kube/config get node server-tang4 -o wide
+kubectl --kubeconfig /home/monitor/.kube/config get nodes -o wide
+kubectl --kubeconfig /home/monitor/.kube/config describe node server-tang1
 kubectl --kubeconfig /home/monitor/.kube/config describe node server-tang4
 ```
 
@@ -51,7 +52,7 @@ Agent join qua stable endpoint `192.168.30.45:6443`. Kiểm tra HAProxy, token r
 ## Application ingress
 
 ```text
-Client -> tang3:80/443 -> tang4:80/443 -> ServiceLB
+Client -> tang3:80/443 -> tang1:80/443 hoặc tang4:80/443 -> ServiceLB
        -> Traefik -> Ingress -> ClusterIP -> Pod
 ```
 
@@ -59,6 +60,8 @@ Client -> tang3:80/443 -> tang4:80/443 -> ServiceLB
 curl -v -H 'Host: app1.onprem.site' http://192.168.30.45/
 nc -vz 192.168.30.35 80
 nc -vz 192.168.30.35 443
+nc -vz 192.168.30.200 80
+nc -vz 192.168.30.200 443
 kubectl --kubeconfig /home/monitor/.kube/config -n kube-system get svc,pods -o wide
 kubectl --kubeconfig /home/monitor/.kube/config get ingress -A
 kubectl --kubeconfig /home/monitor/.kube/config -n microservices-demo get pods,svc,endpointslice -o wide
@@ -67,7 +70,8 @@ kubectl --kubeconfig /home/monitor/.kube/config -n microservices-demo get pods,s
 | Kết quả | Lớp cần kiểm tra |
 | --- | --- |
 | timeout/refused tang3 | HAProxy listener, route, firewall |
-| HAProxy backend down | tang4 agent, ServiceLB hoặc port conflict |
+| Một HAProxy backend down | Agent, ServiceLB hoặc port conflict trên worker tương ứng |
+| Cả hai HAProxy backend down | ServiceLB labels/pool, Traefik Service hoặc lỗi mạng chung |
 | Traefik `404` | Host/path/Ingress rule |
 | `502/503` | Service selector, EndpointSlice, readiness |
 | `ImagePullBackOff` | GHCR visibility, image SHA, DNS/outbound |
@@ -83,8 +87,10 @@ kubectl --kubeconfig /home/monitor/.kube/config -n kube-system get pods -o wide
 Mong đợi:
 
 - tang2 có control-plane `NoSchedule` taint;
-- tang4 có `enablelb=true`, `lbpool=ingress`;
-- Traefik, ServiceLB, smoke và app Pods nằm trên tang4.
+- tang1 và tang4 có `onprem.site/ingress=true`, `enablelb=true`, `lbpool=ingress`;
+- mỗi worker có một Traefik Pod và một ServiceLB Pod;
+- `app1` có một replica của mỗi Deployment trên mỗi worker;
+- smoke và bundled `public-app` vẫn nằm trên tang4.
 
 Chạy `ansible-playbook playbooks/site.yml` để reconcile; không xóa taint nhằm che lỗi worker.
 

@@ -6,8 +6,17 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |-
+    deployment:
+      replicas: {{ k3s_ingress_node_names | length }}
     nodeSelector:
-      kubernetes.io/hostname: "{{ k3s_ingress_node_name }}"
+      onprem.site/ingress: "true"
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: traefik
     service:
       labels:
         svccontroller.k3s.cattle.io/lbpool: ingress

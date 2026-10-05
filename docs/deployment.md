@@ -57,8 +57,8 @@ preflight
  -> HAProxy API backend tang2
  -> K3s server tang2
  -> K3s agents tang4 và tang1
- -> Traefik/ServiceLB trên tang4
- -> HAProxy ingress backend tang4
+ -> hai replica Traefik và ServiceLB trên tang4/tang1
+ -> HAProxy ingress backends tang4/tang1
  -> smoke workload
  -> validation
 ```

@@ -2,4 +2,4 @@
 k3s_addons_traefik_source: "{{ playbook_dir }}/../manifests/traefik/helmchartconfig.yml"
 k3s_addons_traefik_destination: /var/lib/rancher/k3s/server/manifests/traefik-config.yaml
 k3s_addons_rollout_timeout: 180s
-k3s_addons_expected_node: "{{ k3s_workload_node_name }}"
+k3s_addons_expected_nodes: "{{ k3s_ingress_node_names }}"

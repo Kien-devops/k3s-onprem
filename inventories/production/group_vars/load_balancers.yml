@@ -4,4 +4,4 @@ ansible_user: monitor
 
 haproxy_image: haproxy:3.2.24-alpine3.24
 haproxy_api_backend: "{{ hostvars[groups['control_plane'][0]].ansible_host }}"
-haproxy_ingress_backend: "{{ hostvars[k3s_workload_node_name].ansible_host }}"
+haproxy_ingress_backend_nodes: "{{ k3s_ingress_node_names }}"

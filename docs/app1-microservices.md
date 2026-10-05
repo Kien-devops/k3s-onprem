@@ -32,7 +32,7 @@ Auth API chỉ là demo, không phải hệ thống danh tính production.
 Repository platform quản lý:
 
 - inventory của ba host thuộc K3s platform;
-- K3s control plane/SQLite trên tang2, ingress worker trên tang4 và compute worker trên tang1;
+- K3s control plane/SQLite trên tang2 và hai ingress/application worker tang1, tang4;
 - Kubernetes API endpoint qua HAProxy;
 - Traefik và ServiceLB;
 - host-level validation và smoke workload;
@@ -58,8 +58,7 @@ Ranh giới này giúp application release không chạy lại Ansible, không s
 | Thành phần | Vị trí / cấu hình |
 | --- | --- |
 | K3s control plane | `server-tang2` - `192.168.30.44` |
-| Application worker | `server-tang4` - `192.168.30.35` |
-| General compute worker | `server-tang1` - `192.168.30.200` |
+| Ingress/application workers | `server-tang1` - `192.168.30.200`, `server-tang4` - `192.168.30.35` |
 | Edge, HAProxy và CD runner | `server-tang3` - `192.168.30.45` |
 | Namespace | `microservices-demo` |
 | Ingress hostname | `app1.onprem.site` |
@@ -81,11 +80,12 @@ cloudflared server-tang3
     v
 HAProxy server-tang3 :80
     |
-    v
-ServiceLB :80 trên server-tang4
+    +-- ServiceLB :80 trên server-tang1 -- Traefik replica 1
+    |
+    `-- ServiceLB :80 trên server-tang4 -- Traefik replica 2
     |
     v
-Traefik Ingress Controller
+Ingress rules
     |
     +-- /                  -> Service frontend
     +-- /api/auth/*        -> Service auth-service
@@ -93,18 +93,18 @@ Traefik Ingress Controller
     `-- /api/products/*    -> Service product-service
 ```
 
-HAProxy không có backend riêng cho `app1`. Nó chuyển application traffic tới tang4; Traefik đọc hostname/path và chọn Service tương ứng.
+HAProxy không có backend riêng cho `app1`. Nó health-check và cân bằng traffic giữa hai ingress worker; Traefik đọc hostname/path và chọn Service tương ứng.
 
 ## 4. Kubernetes workloads
 
 | Deployment | Replicas | Port | Service | Chức năng |
 | --- | ---: | ---: | --- | --- |
 | `frontend` | 2 | `8080` | `ClusterIP` | Dashboard HTML/CSS/JavaScript |
-| `auth-service` | 1 | `8080` | `ClusterIP` | Demo auth/session API |
-| `user-service` | 1 | `8080` | `ClusterIP` | User profile API |
-| `product-service` | 1 | `8080` | `ClusterIP` | Product catalogue API |
+| `auth-service` | 2 | `8080` | `ClusterIP` | Demo auth/session API |
+| `user-service` | 2 | `8080` | `ClusterIP` | User profile API |
+| `product-service` | 2 | `8080` | `ClusterIP` | Product catalogue API |
 
-Các Deployment dùng `nodeSelector` để chạy trên `server-tang4`. Frontend có hai replicas để chứng minh Service load balancing và zero-unavailable rolling update; đây không phải node-level high availability vì cả hai Pod vẫn ở cùng worker.
+Mỗi Deployment có hai replica và dùng `topologySpreadConstraints` với `whenUnsatisfiable: DoNotSchedule` để bắt buộc một Pod trên mỗi worker. Khi một worker mất, replica còn lại tiếp tục phục vụ; replica thứ hai ở trạng thái `Pending` thay vì bị đặt cùng failure domain.
 
 Image reference có dạng:
 
@@ -219,11 +219,9 @@ kubectl --kubeconfig /home/monitor/.kube/config \
 
 Kết quả khỏe mạnh:
 
-- frontend `2/2` Available;
-- ba backend `1/1` Available;
-- Pod `Running` và Ready trên `server-tang4`;
-- frontend có hai ready endpoints;
-- mỗi backend có một ready endpoint;
+- cả bốn Deployment `2/2` Available;
+- mỗi Deployment có một Pod `Running` và Ready trên tang1, một Pod trên tang4;
+- mỗi Service có hai ready endpoints;
 - Ingress host là `app1.onprem.site`.
 
 Kiểm tra internal data path:
@@ -304,8 +302,8 @@ Nếu thay đổi ảnh hưởng API contract của nhiều service, phải roll
 
 ## 12. Giới hạn hiện tại
 
-- Một control plane, một ingress worker và một HAProxy vẫn là các failure domain đơn lẻ; compute worker tang1 không làm kiến trúc này thành HA.
-- Hai frontend Pod không bảo vệ khỏi sự cố mất `server-tang4`.
+- Một control plane và một edge/HAProxy vẫn là các failure domain đơn lẻ; hai ingress worker chỉ cung cấp HA ở tầng worker.
+- Khi mất một worker, mỗi Deployment chỉ còn một replica và không thể khôi phục mức redundancy cho đến khi worker quay lại.
 - Auth, User và Product dùng dữ liệu demo, chưa có database.
 - Chưa có Horizontal Pod Autoscaler hoặc PodDisruptionBudget.
 - Chưa có centralized tracing và alert rules riêng cho application.

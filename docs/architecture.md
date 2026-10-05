@@ -6,12 +6,12 @@
 server-tang3 (192.168.30.45)
   Ansible / HAProxy / cloudflared / Prometheus / Grafana / GitHub runner
         | API 6443                     | App 80/443
-        v                              v
-server-tang2 (192.168.30.44)     server-tang4 (192.168.30.35)
-  K3s server + SQLite              K3s agent + ServiceLB + Traefik + pinned Pods
-                                      |
-                                server-tang1 (192.168.30.200)
-                                  K3s compute agent
+        v                              +------------------------+
+server-tang2 (192.168.30.44)           v                        v
+  K3s server + SQLite        server-tang4               server-tang1
+                             K3s agent                   K3s agent
+                             ServiceLB + Traefik         ServiceLB + Traefik
+                             app1 replica                app1 replica
 ```
 
 Tang3 không chạy K3s. Tailscale phục vụ SSH management, không tham gia node IP, Flannel hoặc HAProxy backend.
@@ -34,14 +34,15 @@ node-taint:
 
 ## Worker và ingress
 
-Tang4 và tang1 chạy `k3s-agent.service`, không giữ datastore. Chỉ tang4 mang các ingress labels:
+Tang4 và tang1 chạy `k3s-agent.service`, không giữ datastore. Cả hai thuộc inventory group `ingress_workers` và mang các labels:
 
 ```text
+onprem.site/ingress=true
 svccontroller.k3s.cattle.io/enablelb=true
 svccontroller.k3s.cattle.io/lbpool=ingress
 ```
 
-Traefik Deployment được pin vào tang4 và Service dùng pool `ingress`, vì vậy ServiceLB chỉ bind `80/443` trên tang4. Tang1 là compute worker cho workload không có nodeSelector; Application Services giữ type `ClusterIP`.
+Traefik chạy hai replica với hard topology spread theo hostname, một Pod trên mỗi worker. Service dùng pool `ingress`, vì vậy ServiceLB bind `80/443` trên cả tang1 và tang4. HAProxy health-check và cân bằng hai backend; Application Services vẫn giữ type `ClusterIP`.
 
 ## Data paths
 
@@ -49,7 +50,7 @@ Traefik Deployment được pin vào tang4 và Service dùng pool `ingress`, vì
 kubectl/runner -> tang3:6443 -> HAProxy -> tang2:6443 -> K3s API
 
 Internet -> Cloudflare Tunnel tang3 -> HAProxy tang3:80
-         -> ServiceLB tang4 -> Traefik -> Ingress -> Service -> Pod
+         -> ServiceLB tang1 hoặc tang4 -> Traefik -> Ingress -> Service -> Pod
 ```
 
 HAProxy không terminate TLS và không route theo hostname/path; Traefik thực hiện application routing.
@@ -57,9 +58,9 @@ HAProxy không terminate TLS và không route theo hostname/path; Traefik thực
 ## Failure domains
 
 - Tang2 lỗi: API và SQLite mất; không thể schedule/reconcile/rollout.
-- Tang4 lỗi: Ingress và các application Pods đang được pin vào tang4 mất; tang1 không tự thay thế ingress.
-- Tang1 lỗi: giảm compute capacity nhưng ingress trên tang4 vẫn hoạt động.
+- Tang4 lỗi: HAProxy loại backend tang4; ingress và `app1` tiếp tục trên tang1. Bundled smoke/`public-app` được pin tang4 sẽ mất.
+- Tang1 lỗi: HAProxy loại backend tang1; ingress và `app1` tiếp tục trên tang4.
 - Tang3 lỗi: K3s nội bộ vẫn tồn tại nhưng stable API, public edge, monitoring và CD runner mất.
 - LAN/DHCP lỗi: inventory, kubeconfig và HAProxy backend có thể drift.
 
-Đây là tách role để dễ hiểu và vận hành, không phải HA. Hai worker chưa loại bỏ single point of failure tại control plane, ingress worker và edge; HA thật cần nhiều K3s server với embedded etcd hoặc external datastore, ingress trên nhiều worker và redundant edge.
+Hai ingress worker loại bỏ failure domain đơn tại tầng worker ingress, nhưng đây chưa phải HA toàn cluster. Tang2 vẫn là single control plane/SQLite và tang3 vẫn là single edge/HAProxy; HA đầy đủ cần nhiều K3s server với embedded etcd hoặc external datastore và edge/load balancer dự phòng.

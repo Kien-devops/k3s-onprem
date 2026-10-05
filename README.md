@@ -15,31 +15,32 @@ server-tang3 - 192.168.30.45
           +-- :6443 --------> server-tang2 - 192.168.30.44
           |                     K3s server/control plane + SQLite
           |
-          `-- :80/:443 -----> server-tang4 - 192.168.30.35
-                                 K3s agent/worker + ServiceLB + Traefik + apps
-
-K3s compute worker ---------> server-tang1 - 192.168.30.200
-                              K3s agent/worker
+          `-- :80/:443 --+--> server-tang4 - 192.168.30.35
+                         |      K3s worker + ServiceLB + Traefik + app1 replica
+                         |
+                         `--> server-tang1 - 192.168.30.200
+                                K3s worker + ServiceLB + Traefik + app1 replica
 ```
 
 | Inventory group | Host | LAN IP | Trách nhiệm |
 | --- | --- | --- | --- |
 | `control_plane` | `server-tang2` | `192.168.30.44` | K3s API, scheduler/controller và SQLite datastore |
-| `workers` | `server-tang4` | `192.168.30.35` | Ingress worker: Traefik, ServiceLB và application Pods được pin |
-| `workers` | `server-tang1` | `192.168.30.200` | Compute worker, không bind cổng ServiceLB ingress |
+| `workers`, `ingress_workers` | `server-tang4` | `192.168.30.35` | Traefik, ServiceLB, bundled workloads và một replica của mỗi workload `app1` |
+| `workers`, `ingress_workers` | `server-tang1` | `192.168.30.200` | Traefik, ServiceLB và một replica của mỗi workload `app1` |
 | `load_balancers` | `server-tang3` | `192.168.30.45` | Ansible, HAProxy, tunnel, monitoring và CD runner |
 
-Control plane có `NoSchedule` taint. Tang4 là ingress worker duy nhất với ServiceLB labels `enablelb=true` và `lbpool=ingress`; tang1 là compute worker thông thường. Các manifest hiện pin ứng dụng vào tang4 nên việc thêm tang1 chưa tạo HA cho ingress/application.
+Control plane có `NoSchedule` taint. Cả tang1 và tang4 thuộc nhóm `ingress_workers`, có ServiceLB labels `enablelb=true`, `lbpool=ingress` và chạy một replica Traefik. Smoke test và manifest `public-app` trong repository này vẫn được pin vào tang4. Riêng `app1` do repository ứng dụng quản lý dùng hai replica cho mỗi Deployment, bắt buộc một replica trên mỗi worker bằng topology spread.
 
-Đây không phải Kubernetes HA. Nếu tang2 mất, API/SQLite mất và cluster không thể reconcile; các Pod đang chạy trên tang4 có thể tiếp tục tạm thời nhưng không thể coi là hệ thống khỏe. Nếu tang4 mất, application/Ingress mất. Nếu tang3 mất, cluster vẫn chạy nội bộ nhưng stable API, public edge, monitoring và CD runner mất.
+Đây chưa phải Kubernetes HA toàn phần. Nếu tang2 mất, API/SQLite mất và cluster không thể reconcile; các Pod đang chạy có thể tiếp tục tạm thời nhưng không thể coi là hệ thống khỏe. Nếu một worker mất, HAProxy loại backend lỗi và `app1` tiếp tục qua worker còn lại, nhưng replica thứ hai sẽ `Pending` cho đến khi failure domain phục hồi. Nếu tang3 mất, cluster vẫn chạy nội bộ nhưng stable API, public edge, monitoring và CD runner mất.
 
 ## Data paths
 
 ```text
 kubectl -> tang3:6443 -> HAProxy -> tang2:6443 -> K3s API -> SQLite
 
-Client -> tang3:80/:443 -> HAProxy -> tang4:80/:443
-       -> ServiceLB -> Traefik -> Ingress -> ClusterIP Service -> Pod
+Client -> tang3:80/:443 -> HAProxy -> tang1:80/:443 hoặc tang4:80/:443
+       -> ServiceLB -> Traefik -> Ingress -> ClusterIP Service
+       -> Pod (`public-app` trên tang4; `app1` trải đều tang1 và tang4)
 ```
 
 HAProxy dùng TCP passthrough. K3s API certificate có TLS SAN `192.168.30.45`; backend IP được derive từ inventory, không hard-code trong template.
@@ -62,7 +63,7 @@ HAProxy dùng TCP passthrough. K3s API certificate có TLS SAN `192.168.30.45`; 
 ```text
 inventories/production/
   hosts.yml
-  group_vars/{all,control_plane,workers,load_balancers}.yml
+  group_vars/{all,control_plane,workers,ingress_workers,load_balancers}.yml
   host_vars/{server-tang1,server-tang2,server-tang3,server-tang4}.yml
 playbooks/
   migrate-to-dedicated-control-plane.yml
@@ -88,8 +89,8 @@ docs/
 
 - `preflight`: xác minh IP/interface/RAM, bảo vệ Prometheus và Grafana trên tang3, chuẩn bị kernel/swap cho K3s nodes.
 - `k3s_control_plane`: converge K3s server tang2, lấy node token bằng `no_log`, tạo kubeconfig dùng HAProxy endpoint.
-- `k3s_worker`: converge K3s agents tang4/tang1, chờ từng node Ready và chỉ xác minh ServiceLB labels trên ingress worker.
-- `k3s_addons`: chờ Helm controller, xác minh Traefik và ServiceLB chỉ chạy trên tang4.
+- `k3s_worker`: converge K3s agents tang4/tang1, chờ từng node Ready và xác minh ingress/ServiceLB labels.
+- `k3s_addons`: chạy hai replica Traefik, bắt buộc trải đều và xác minh ServiceLB trên cả hai ingress worker.
 - `haproxy`: render từ inventory, validate config trước khi recreate container.
 - `validation`: kiểm tra đúng ba node, taint/labels/placement, API direct/HAProxy, ingress HTTP/HTTPS và protected containers.
 
@@ -110,7 +111,9 @@ ansible-playbook --syntax-check playbooks/site.yml
 ansible-playbook playbooks/site.yml
 ```
 
-Migration một lần từ cluster single-node cũ trên tang4 yêu cầu backup app và confirmation flag:
+Playbook migration được giữ lại để audit quá trình chuyển từ cluster single-node cũ trên tang4. Không chạy lại trên topology hiện tại: playbook chứa các precondition của trạng thái trước migration và sẽ fail-closed khi tang2 đã chạy K3s.
+
+Lệnh lịch sử đã dùng cho lần migration đó:
 
 ```bash
 ansible-playbook playbooks/migrate-to-dedicated-control-plane.yml \
@@ -131,7 +134,7 @@ curl -ksS https://192.168.30.45:6443/ping
 curl -H 'Host: demo.apps.k3s.home.arpa' http://192.168.30.45/
 ```
 
-Kết quả đúng: tang1, tang2 và tang4 đều Ready; control plane có `NoSchedule`; Traefik, ServiceLB, smoke workload và `app1` nằm trên tang4; direct API và HAProxy API đều trả `pong`.
+Kết quả đúng của hạ tầng: tang1, tang2 và tang4 đều Ready; control plane có `NoSchedule`; mỗi worker có một Traefik Pod và một ServiceLB Pod; smoke workload vẫn nằm trên tang4; direct API và HAProxy API đều trả `pong`. Placement của `app1` được kiểm tra riêng trong pipeline ứng dụng và bằng lệnh `kubectl` bên dưới.
 
 ## `app1` và CI/CD
 
@@ -140,8 +143,17 @@ Kết quả đúng: tang1, tang2 và tang4 đều Ready; control plane có `NoSc
 ```text
 GitHub Actions -> GHCR:<git-sha> -> runner tang3
   -> HAProxy API tang3:6443 -> K3s API tang2
-  -> Deployments/ClusterIP/Ingress -> Pods tang4
+  -> Deployments/ClusterIP/Ingress -> Pods tang1 + tang4
 ```
+
+Mỗi Deployment (`frontend`, `auth-service`, `user-service`, `product-service`) chạy hai replica. Trạng thái đạt yêu cầu là mỗi Deployment có một Pod trên tang1 và một Pod trên tang4; pipeline phải fail nếu cả hai replica cùng nằm trên một node.
+
+```bash
+kubectl --kubeconfig /home/monitor/.kube/config \
+  -n microservices-demo get pods -o wide
+```
+
+Ingress chịu được lỗi một worker vì HAProxy health-check cả tang1 và tang4. Tang3 vẫn là single edge/HAProxy failure domain và tang2 vẫn là single control-plane/datastore failure domain.
 
 Chi tiết: [docs/app1-microservices.md](docs/app1-microservices.md) và [docs/application-cicd.md](docs/application-cicd.md).
 
@@ -152,6 +164,6 @@ Chi tiết: [docs/app1-microservices.md](docs/app1-microservices.md) và [docs/a
 - Không expose `:6443` ra Internet.
 - App pipeline không dùng admin kubeconfig và không quản lý cluster-level resources.
 - SQLite một control plane không cung cấp HA; cần backup datastore và rebuild procedure.
-- Nên đặt DHCP reservation cho `.200`, `.45` và `.35`.
+- Nên đặt DHCP reservation cho `.44`, `.200`, `.45` và `.35`.
 
 Xem [deployment](docs/deployment.md), [architecture](docs/architecture.md) và [troubleshooting](docs/troubleshooting.md) để vận hành chi tiết.
