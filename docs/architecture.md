@@ -42,7 +42,7 @@ svccontroller.k3s.cattle.io/enablelb=true
 svccontroller.k3s.cattle.io/lbpool=ingress
 ```
 
-Traefik chạy hai replica với hard topology spread theo hostname, một Pod trên mỗi worker. Service dùng pool `ingress`, vì vậy ServiceLB bind `80/443` trên cả tang1 và tang4. HAProxy health-check và cân bằng hai backend; Application Services vẫn giữ type `ClusterIP`.
+Traefik chạy hai replica với hard topology spread theo hostname, một Pod trên mỗi worker. Rolling update dùng `maxSurge: 0`, `maxUnavailable: 1` để Pod cũ không làm sai lệch phép tính topology khi tạo ReplicaSet mới. Service dùng pool `ingress`, vì vậy ServiceLB bind `80/443` trên cả tang1 và tang4. HAProxy health-check và cân bằng hai backend; Application Services vẫn giữ type `ClusterIP`.
 
 ## Data paths
 
