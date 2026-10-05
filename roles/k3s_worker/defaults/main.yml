@@ -4,6 +4,4 @@ k3s_worker_binary: /usr/local/bin/k3s
 k3s_worker_config: /etc/rancher/k3s/config.yaml
 k3s_worker_service_unit: /etc/systemd/system/k3s-agent.service
 k3s_worker_service_environment: /etc/systemd/system/k3s-agent.service.env
-k3s_worker_required_labels:
-  svccontroller.k3s.cattle.io/enablelb: "true"
-  svccontroller.k3s.cattle.io/lbpool: ingress
+k3s_worker_required_labels: {}

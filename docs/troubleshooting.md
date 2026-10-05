@@ -22,9 +22,9 @@ kubectl -> tang3:6443 -> HAProxy -> tang2:6443 -> k3s.service
 ```bash
 # tang3
 curl -ksS https://192.168.30.45:6443/ping
-curl -ksS https://192.168.30.200:6443/ping
+curl -ksS https://192.168.30.44:6443/ping
 docker logs --tail 100 k3s-haproxy
-grep -n '192.168.30.200:6443' /home/monitor/k3s-haproxy/haproxy.cfg
+grep -n '192.168.30.44:6443' /home/monitor/k3s-haproxy/haproxy.cfg
 
 # tang2
 sudo systemctl status k3s --no-pager

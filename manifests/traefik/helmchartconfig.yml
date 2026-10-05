@@ -6,6 +6,8 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |-
+    nodeSelector:
+      kubernetes.io/hostname: "{{ k3s_ingress_node_name }}"
     service:
       labels:
         svccontroller.k3s.cattle.io/lbpool: ingress

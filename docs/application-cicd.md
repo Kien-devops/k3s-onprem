@@ -61,7 +61,7 @@ Tang3 chỉ thực hiện phần deploy nhẹ bằng `kubectl`. Docker build ch�
 
 Quản lý:
 
-- K3s control plane trên tang2 và worker trên tang4;
+- K3s control plane trên tang2, ingress worker trên tang4 và compute worker trên tang1;
 - HAProxy;
 - Traefik và ServiceLB;
 - cluster-level configuration;
@@ -585,7 +585,7 @@ CI build image
   -> Argo CD pull và reconcile cluster
 ```
 
-GitOps giúp GitHub Actions không cần kubeconfig, nhưng bổ sung Argo CD, GitOps repository, reconciliation policy và secret management. Với một control plane, một worker và một vài application, chưa cần thêm độ phức tạp này.
+GitOps giúp GitHub Actions không cần kubeconfig, nhưng bổ sung Argo CD, GitOps repository, reconciliation policy và secret management. Với một control plane, hai worker và một vài application, chưa cần thêm độ phức tạp này.
 
 ## 13. Tài liệu tham khảo chính thức
 

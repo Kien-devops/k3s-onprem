@@ -4,8 +4,9 @@
 
 | Host | IP | Service |
 | --- | --- | --- |
-| tang2 | `192.168.30.200` | `k3s.service` |
+| tang2 | `192.168.30.44` | `k3s.service` |
 | tang4 | `192.168.30.35` | `k3s-agent.service` |
+| tang1 | `192.168.30.200` | `k3s-agent.service` (compute worker) |
 | tang3 | `192.168.30.45` | HAProxy container, Ansible, monitoring, runner |
 
 ## Chuẩn bị
@@ -55,7 +56,7 @@ Migration playbook:
 preflight
  -> HAProxy API backend tang2
  -> K3s server tang2
- -> K3s agent tang4
+ -> K3s agents tang4 và tang1
  -> Traefik/ServiceLB trên tang4
  -> HAProxy ingress backend tang4
  -> smoke workload
@@ -79,7 +80,7 @@ Release bình thường phải đi qua push `main`, tạo exact-SHA images và d
 ansible-playbook playbooks/validate.yml
 kubectl --kubeconfig /home/monitor/.kube/config get nodes -o wide
 kubectl --kubeconfig /home/monitor/.kube/config get pods -A -o wide
-curl -ksS https://192.168.30.200:6443/ping
+curl -ksS https://192.168.30.44:6443/ping
 curl -ksS https://192.168.30.45:6443/ping
 curl -H 'Host: app1.onprem.site' http://192.168.30.45/api/auth/health
 curl --fail https://app1.onprem.site/api/auth/health

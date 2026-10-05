@@ -1,4 +1,4 @@
 ---
 ansible_user: node
 ansible_become_exe: /usr/bin/sudo.ws
-lan_interface: wlx58044f3fffa6
+lan_interface: wlx347de4475af5

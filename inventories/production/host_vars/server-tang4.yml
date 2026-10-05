@@ -1,3 +1,9 @@
 ---
 ansible_user: node
 lan_interface: wlx58044f3fedb4
+k3s_worker_node_labels:
+  - "svccontroller.k3s.cattle.io/enablelb=true"
+  - "svccontroller.k3s.cattle.io/lbpool=ingress"
+k3s_worker_required_labels:
+  svccontroller.k3s.cattle.io/enablelb: "true"
+  svccontroller.k3s.cattle.io/lbpool: ingress

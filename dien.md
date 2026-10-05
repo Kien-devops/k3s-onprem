@@ -2,7 +2,7 @@
 
 Tài liệu kỹ thuật về hệ thống đo đạc, thu thập và trực quan hóa điện năng tiêu thụ (Watt / kWh / chi phí) cho các máy trong on-prem homelab.
 
-> `server-tang2` là một power-monitoring target độc lập, không phải thành viên K3s cluster. Topology K3s hiện tại chỉ dùng tang3 làm edge/automation và tang4 làm single-node K3s server.
+> Topology K3s hiện tại dùng tang2 làm control plane, tang4 làm ingress worker, tang1 làm compute worker và tang3 làm edge/automation. Tang1 mới chưa nằm trong baseline đo điện ba máy bên dưới.
 
 ---
 

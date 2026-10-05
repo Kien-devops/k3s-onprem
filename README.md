@@ -1,6 +1,6 @@
 # K3s On-Prem Homelab bằng Ansible
 
-Repository tự động hóa cluster K3s hai node với control plane và workload tách biệt. Tang3 cung cấp automation và stable edge endpoint nhưng không phải thành viên K3s.
+Repository tự động hóa cluster K3s ba node với control plane và worker tách biệt. Tang3 cung cấp automation và stable edge endpoint nhưng không phải thành viên K3s.
 
 ## Topology
 
@@ -12,20 +12,24 @@ Client / kubectl / Internet
 server-tang3 - 192.168.30.45
   Ansible + HAProxy + cloudflared + monitoring + GitHub runner
           |
-          +-- :6443 --------> server-tang2 - 192.168.30.200
+          +-- :6443 --------> server-tang2 - 192.168.30.44
           |                     K3s server/control plane + SQLite
           |
           `-- :80/:443 -----> server-tang4 - 192.168.30.35
-                                K3s agent/worker + ServiceLB + Traefik + apps
+                                 K3s agent/worker + ServiceLB + Traefik + apps
+
+K3s compute worker ---------> server-tang1 - 192.168.30.200
+                              K3s agent/worker
 ```
 
 | Inventory group | Host | LAN IP | Trách nhiệm |
 | --- | --- | --- | --- |
-| `control_plane` | `server-tang2` | `192.168.30.200` | K3s API, scheduler/controller và SQLite datastore |
-| `workers` | `server-tang4` | `192.168.30.35` | Traefik, ServiceLB và application Pods |
+| `control_plane` | `server-tang2` | `192.168.30.44` | K3s API, scheduler/controller và SQLite datastore |
+| `workers` | `server-tang4` | `192.168.30.35` | Ingress worker: Traefik, ServiceLB và application Pods được pin |
+| `workers` | `server-tang1` | `192.168.30.200` | Compute worker, không bind cổng ServiceLB ingress |
 | `load_balancers` | `server-tang3` | `192.168.30.45` | Ansible, HAProxy, tunnel, monitoring và CD runner |
 
-Control plane có `NoSchedule` taint. Tang4 có ServiceLB labels `enablelb=true` và `lbpool=ingress`, nên platform/application workloads chỉ chạy trên worker.
+Control plane có `NoSchedule` taint. Tang4 là ingress worker duy nhất với ServiceLB labels `enablelb=true` và `lbpool=ingress`; tang1 là compute worker thông thường. Các manifest hiện pin ứng dụng vào tang4 nên việc thêm tang1 chưa tạo HA cho ingress/application.
 
 Đây không phải Kubernetes HA. Nếu tang2 mất, API/SQLite mất và cluster không thể reconcile; các Pod đang chạy trên tang4 có thể tiếp tục tạm thời nhưng không thể coi là hệ thống khỏe. Nếu tang4 mất, application/Ingress mất. Nếu tang3 mất, cluster vẫn chạy nội bộ nhưng stable API, public edge, monitoring và CD runner mất.
 
@@ -59,7 +63,7 @@ HAProxy dùng TCP passthrough. K3s API certificate có TLS SAN `192.168.30.45`; 
 inventories/production/
   hosts.yml
   group_vars/{all,control_plane,workers,load_balancers}.yml
-  host_vars/{server-tang2,server-tang3,server-tang4}.yml
+  host_vars/{server-tang1,server-tang2,server-tang3,server-tang4}.yml
 playbooks/
   migrate-to-dedicated-control-plane.yml
   preflight.yml
@@ -84,10 +88,10 @@ docs/
 
 - `preflight`: xác minh IP/interface/RAM, bảo vệ Prometheus và Grafana trên tang3, chuẩn bị kernel/swap cho K3s nodes.
 - `k3s_control_plane`: converge K3s server tang2, lấy node token bằng `no_log`, tạo kubeconfig dùng HAProxy endpoint.
-- `k3s_worker`: converge K3s agent tang4, chờ node Ready và xác minh ServiceLB labels.
+- `k3s_worker`: converge K3s agents tang4/tang1, chờ từng node Ready và chỉ xác minh ServiceLB labels trên ingress worker.
 - `k3s_addons`: chờ Helm controller, xác minh Traefik và ServiceLB chỉ chạy trên tang4.
 - `haproxy`: render từ inventory, validate config trước khi recreate container.
-- `validation`: kiểm tra đúng hai node, taint/labels/placement, API direct/HAProxy, ingress HTTP/HTTPS và protected containers.
+- `validation`: kiểm tra đúng ba node, taint/labels/placement, API direct/HAProxy, ingress HTTP/HTTPS và protected containers.
 
 ## Setup và deploy
 
@@ -122,12 +126,12 @@ ansible-playbook playbooks/validate.yml
 kubectl --kubeconfig /home/monitor/.kube/config get nodes -o wide
 kubectl --kubeconfig /home/monitor/.kube/config get pods -A -o wide
 
-curl -ksS https://192.168.30.200:6443/ping
+curl -ksS https://192.168.30.44:6443/ping
 curl -ksS https://192.168.30.45:6443/ping
 curl -H 'Host: demo.apps.k3s.home.arpa' http://192.168.30.45/
 ```
 
-Kết quả đúng: tang2 và tang4 đều Ready; control plane có `NoSchedule`; Traefik, ServiceLB, smoke workload và `app1` nằm trên tang4; direct API và HAProxy API đều trả `pong`.
+Kết quả đúng: tang1, tang2 và tang4 đều Ready; control plane có `NoSchedule`; Traefik, ServiceLB, smoke workload và `app1` nằm trên tang4; direct API và HAProxy API đều trả `pong`.
 
 ## `app1` và CI/CD
 

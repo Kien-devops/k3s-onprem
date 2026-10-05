@@ -3,6 +3,12 @@ agent_config_yaml: |
   node-name: {{ inventory_hostname }}
   node-ip: {{ ansible_host }}
   flannel-iface: {{ lan_interface }}
+  {% if k3s_worker_node_labels | length > 0 %}
   node-label:
-    - "svccontroller.k3s.cattle.io/enablelb=true"
-    - "svccontroller.k3s.cattle.io/lbpool=ingress"
+  {% for label in k3s_worker_node_labels %}
+    - "{{ label }}"
+  {% endfor %}
+  {% endif %}
+
+k3s_worker_node_labels: []
+k3s_worker_required_labels: {}
