@@ -1,0 +1,97 @@
+---
+- name: Inspect the K3s agent binary
+  ansible.builtin.stat:
+    path: "{{ k3s_worker_binary }}"
+  register: k3s_worker_binary_stat
+
+- name: Read the installed K3s agent version
+  ansible.builtin.command: "{{ k3s_worker_binary }} --version"
+  register: k3s_worker_version
+  changed_when: false
+  when: k3s_worker_binary_stat.stat.exists
+
+- name: Inspect the K3s agent configuration
+  ansible.builtin.stat:
+    path: "{{ k3s_worker_config }}"
+  register: k3s_worker_config_stat
+
+- name: Read the K3s agent configuration
+  ansible.builtin.slurp:
+    path: "{{ k3s_worker_config }}"
+  register: k3s_worker_config_raw
+  when: k3s_worker_config_stat.stat.exists
+
+- name: Inspect the K3s agent service environment
+  ansible.builtin.stat:
+    path: "{{ k3s_worker_service_environment }}"
+  register: k3s_worker_environment_stat
+
+- name: Inspect the K3s agent service unit
+  ansible.builtin.stat:
+    path: "{{ k3s_worker_service_unit }}"
+  register: k3s_worker_service_unit_stat
+
+- name: Read the K3s agent service unit
+  ansible.builtin.slurp:
+    path: "{{ k3s_worker_service_unit }}"
+  register: k3s_worker_service_unit_raw
+  when: k3s_worker_service_unit_stat.stat.exists
+
+- name: Read K3s agent service state
+  ansible.builtin.service_facts:
+
+- name: Determine whether upstream agent convergence is required
+  ansible.builtin.set_fact:
+    k3s_worker_converge_required: >-
+      {{
+        not k3s_worker_binary_stat.stat.exists
+        or k3s_version not in (k3s_worker_version.stdout | default(''))
+        or not k3s_worker_config_stat.stat.exists
+        or (
+          (k3s_worker_config_raw.content | default('') | b64decode | from_yaml)
+          != (agent_config_yaml | from_yaml)
+        )
+        or not k3s_worker_environment_stat.stat.exists
+        or not k3s_worker_service_unit_stat.stat.exists
+        or (
+          'https://' ~ api_endpoint ~ ':' ~ api_port
+        ) not in (k3s_worker_service_unit_raw.content | default('') | b64decode)
+        or ansible_facts.services['k3s-agent.service'] is not defined
+        or ansible_facts.services['k3s-agent.service'].state != 'running'
+      }}
+
+- name: Install or reconcile K3s with the upstream agent role
+  ansible.builtin.include_role:
+    name: k3s.orchestration.k3s_agent
+  when: k3s_worker_converge_required
+
+- name: Verify the K3s agent service is active
+  ansible.builtin.command: systemctl is-active k3s-agent
+  register: k3s_worker_service
+  changed_when: false
+  failed_when: k3s_worker_service.stdout != 'active'
+
+- name: Wait for the worker node to become Ready
+  ansible.builtin.command: >-
+    k3s kubectl wait --for=condition=Ready
+    node/{{ inventory_hostname }}
+    --timeout={{ k3s_worker_ready_timeout }}
+  delegate_to: "{{ groups['control_plane'][0] }}"
+  changed_when: false
+
+- name: Read worker node labels
+  ansible.builtin.command: k3s kubectl get node {{ inventory_hostname }} -o json
+  delegate_to: "{{ groups['control_plane'][0] }}"
+  register: k3s_worker_node_raw
+  changed_when: false
+
+- name: Verify worker labels used by ServiceLB
+  vars:
+    k3s_worker_node: "{{ k3s_worker_node_raw.stdout | from_json }}"
+  ansible.builtin.assert:
+    that:
+      - k3s_worker_node['metadata']['labels'][item.key] == item.value
+    fail_msg: >-
+      Worker {{ inventory_hostname }} is missing required label
+      {{ item.key }}={{ item.value }}.
+  loop: "{{ k3s_worker_required_labels | dict2items }}"

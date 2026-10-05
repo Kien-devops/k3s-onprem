@@ -14,6 +14,6 @@ api_port: 6443
 kubeconfig: /home/monitor/.kube/config
 
 k3s_control_plane_name: "{{ groups['control_plane'][0] }}"
-k3s_workload_node_name: "{{ groups['control_plane'][0] }}"
+k3s_workload_node_name: "{{ groups['workers'][0] }}"
 smoke_test_hostname: demo.apps.k3s.home.arpa
 public_app_hostname: nginx.onprem.site

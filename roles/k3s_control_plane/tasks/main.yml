@@ -44,6 +44,17 @@
     name: k3s.orchestration.k3s_server
   when: k3s_control_plane_converge_required
 
+- name: Read the K3s node token for worker convergence
+  ansible.builtin.slurp:
+    path: "{{ k3s_control_plane_token }}"
+  register: k3s_control_plane_token_raw
+  no_log: true
+
+- name: Expose the node token to the worker role
+  ansible.builtin.set_fact:
+    random_token: "{{ k3s_control_plane_token_raw.content | b64decode | trim }}"
+  no_log: true
+
 - name: Create the controller kubeconfig directory
   ansible.builtin.file:
     path: "{{ kubeconfig | dirname }}"

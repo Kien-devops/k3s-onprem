@@ -1,8 +1,9 @@
 ---
-- name: Wait for the single Kubernetes node to be Ready
+- name: Wait for both Kubernetes nodes to be Ready
   ansible.builtin.command: >-
     k3s kubectl wait --for=condition=Ready
     node/{{ validation_control_plane_name }}
+    node/{{ validation_worker_name }}
     --timeout={{ validation_node_ready_timeout }}
   changed_when: false
 
@@ -20,19 +21,31 @@
   register: validation_nodes_raw
   changed_when: false
 
-- name: Assert the rebuilt cluster contains only the expected node
+- name: Assert the cluster contains the dedicated control plane and worker
   vars:
     validation_node_items: "{{ (validation_nodes_raw.stdout | from_json)['items'] }}"
+    validation_control_plane_node: >-
+      {{ validation_node_items
+         | selectattr('metadata.name', 'equalto', validation_control_plane_name)
+         | first }}
+    validation_worker_node: >-
+      {{ validation_node_items
+         | selectattr('metadata.name', 'equalto', validation_worker_name)
+         | first }}
   ansible.builtin.assert:
     that:
-      - validation_node_items | length == 1
-      - validation_node_items[0].metadata.name == validation_control_plane_name
-      - validation_node_items[0].spec.taints | default([]) | selectattr('effect', 'equalto', 'NoSchedule') | list | length == 0
-      - validation_node_items[0].metadata.labels['svccontroller.k3s.cattle.io/enablelb'] == 'true'
-      - validation_node_items[0].metadata.labels['svccontroller.k3s.cattle.io/lbpool'] == 'ingress'
+      - validation_node_items | length == 2
+      - >-
+        (validation_node_items | map(attribute='metadata.name') | sort | list)
+        == ([validation_control_plane_name, validation_worker_name] | sort)
+      - validation_control_plane_node.spec.taints | default([]) | selectattr('effect', 'equalto', 'NoSchedule') | list | length > 0
+      - validation_worker_node.spec.taints | default([]) | selectattr('effect', 'equalto', 'NoSchedule') | list | length == 0
+      - validation_worker_node.metadata.labels['svccontroller.k3s.cattle.io/enablelb'] == 'true'
+      - validation_worker_node.metadata.labels['svccontroller.k3s.cattle.io/lbpool'] == 'ingress'
     fail_msg: >-
-      The rebuilt cluster must contain only schedulable node
-      {{ validation_control_plane_name }}.
+      The cluster must contain dedicated control plane
+      {{ validation_control_plane_name }} and schedulable worker
+      {{ validation_worker_name }}.
 
 - name: Read Traefik pods
   ansible.builtin.command: >-

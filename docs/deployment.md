@@ -1,250 +1,92 @@
-# Rebuild và triển khai K3s homelab
+# Deployment và migration runbook
 
-Tài liệu này mô tả quy trình rebuild cluster mới từ `server-tang3`. Cluster cũ có SQLite trên control plane đã mất và không được recover/rejoin.
+## Desired state
 
-## 1. Source of truth
+| Host | IP | Service |
+| --- | --- | --- |
+| tang2 | `192.168.30.200` | `k3s.service` |
+| tang4 | `192.168.30.35` | `k3s-agent.service` |
+| tang3 | `192.168.30.45` | HAProxy container, Ansible, monitoring, runner |
 
-| Host | LAN IP | Connection | Vai trò mới |
-| --- | --- | --- | --- |
-| `server-tang3` | `192.168.30.45` | local user `monitor` | Ansible, HAProxy, tunnel, monitoring |
-| `server-tang4` | `192.168.30.35` | SSH user `node` | K3s server, SQLite, schedulable workload node |
+## Chuẩn bị
 
-LAN interfaces:
-
-```text
-server-tang3 -> wlp2s0
-server-tang4 -> wlx58044f3fedb4
-```
-
-Tailscale chỉ dùng SSH/management. Không đặt Tailscale IP vào K3s config hoặc HAProxy backend.
-
-## 2. Bảo vệ workload không liên quan
-
-Trước recovery, ghi lại trên tang3 và tang4:
-
-```bash
-docker ps -a || true
-docker volume ls || true
-docker network ls || true
-systemctl --type=service --state=running
-```
-
-Yêu cầu bảo vệ:
-
-- `power-prometheus` và `power-grafana` trên tang3 phải tiếp tục chạy;
-- không xóa Docker containers/volumes/networks ngoài K3s;
-- không xóa Tailscale, SSH, `/home` hoặc network configuration;
-- không format disk, chạy `fsck` hoặc reinstall OS;
-- không flush firewall mù quáng.
-
-Recovery playbook từ chối cleanup nếu Docker, CRI-O hoặc standalone containerd active trên tang4.
-
-## 3. Chuẩn bị controller
-
-Chạy trên tang3:
+Trên tang3:
 
 ```bash
 cd /home/monitor/k3s-onprem
-python3 -m venv /home/monitor/.venvs/k3s-ansible
 source /home/monitor/.venvs/k3s-ansible/bin/activate
-python -m pip install -r requirements.txt
-ansible-galaxy collection install -r collections/requirements.yml
-```
-
-Repo pin Ansible/K3s versions; recovery không tự upgrade ngoài phạm vi.
-
-## 4. Discovery và preflight
-
-```bash
 ansible-inventory --graph
-ansible-inventory --host server-tang3
-ansible-inventory --host server-tang4
 ansible all -m ping
-ansible-playbook playbooks/preflight.yml
+ansible-playbook --syntax-check playbooks/migrate-to-dedicated-control-plane.yml
+ansible-playbook --syntax-check playbooks/site.yml
 ```
 
-Inventory graph mong đợi:
-
-```text
-control_plane -> server-tang4
-load_balancers -> server-tang3
-server -> control_plane
-workers/agent -> empty
-k3s_cluster -> server-tang4
-```
-
-Preflight fail nếu inventory LAN IP/interface sai, RAM không đủ hoặc monitoring tang3 không chạy.
-
-## 5. Syntax check
+Backup application trước migration:
 
 ```bash
-ansible-playbook playbooks/rebuild-single-node.yml --syntax-check
-ansible-playbook playbooks/site.yml --syntax-check
-ansible-playbook playbooks/app.yml --syntax-check
+kubectl --kubeconfig /home/monitor/.kube/config \
+  get all,ingress,networkpolicy,serviceaccount,role,rolebinding \
+  -n microservices-demo -o yaml \
+  > /home/monitor/app1-pre-migration-backup.yaml
+chmod 600 /home/monitor/app1-pre-migration-backup.yaml
 ```
 
-Không chạy cleanup nếu syntax check hoặc Ansible connectivity fail.
+## Migration một lần
 
-## 6. One-time cleanup agent cũ
-
-Xác nhận cluster cũ và SQLite cũ thực sự đã mất, sau đó chạy:
+SQLite của K3s single-node cũ trên tang4 không thể biến thành một multi-server control plane. Với app stateless, quy trình sạch là dựng cluster mới:
 
 ```bash
-ansible-playbook playbooks/rebuild-single-node.yml \
-  -e confirm_k3s_rebuild=true
-```
-
-Playbook:
-
-1. Xác minh target đúng `server-tang4`/`192.168.30.35`.
-2. Refuse nếu `k3s.service` đã tồn tại.
-3. Refuse nếu có unrelated container runtime active.
-4. Yêu cầu official `/usr/local/bin/k3s-agent-uninstall.sh`.
-5. Chạy uninstall script.
-6. Chỉ xóa known K3s leftovers còn lại.
-7. Chỉ xóa `cni0`, `flannel.1`, `kube-ipvs0` nếu chúng tồn tại.
-8. Reload systemd và xác minh `k3s agent` process đã mất.
-
-Sau cleanup:
-
-```bash
-ansible server-tang4 -b -m shell -a \
-  "systemctl status k3s-agent --no-pager || true; ip link show"
-```
-
-## 7. Dựng cluster mới
-
-```bash
+ansible-playbook playbooks/migrate-to-dedicated-control-plane.yml \
+  -e confirm_k3s_topology_migration=true
 ansible-playbook playbooks/site.yml
 ```
 
-### Phase 1: Preflight
+Migration playbook:
 
-Xác minh tang3/tang4 và áp dụng baseline tối thiểu cho K3s.
+1. Xác minh tang2 `.200`, interface LAN và trạng thái chưa có K3s/runtime.
+2. Xác minh backup app trên tang3.
+3. Xác minh tang4 đang chạy đúng K3s server cũ.
+4. Gọi official `k3s-uninstall.sh` trên tang4.
+5. Chỉ xóa K3s/CNI leftovers đã biết.
 
-### Phase 2: HAProxy API
-
-Render/validate:
-
-```text
-192.168.30.45:6443 -> 192.168.30.35:6443
-```
-
-Backend có thể tạm thời Down trước khi K3s server được cài; frontend listener vẫn phải tồn tại.
-
-### Phase 3: K3s server
-
-Upstream role cài K3s server `v1.36.4+k3s1` trên tang4 với:
-
-- LAN node IP/interface;
-- TLS SAN tang3;
-- SQLite;
-- secrets encryption;
-- ServiceLB labels;
-- không có `NoSchedule` taint.
-
-Kubeconfig gốc được fetch từ `/etc/rancher/k3s/k3s.yaml`, rồi endpoint trên tang3 được đổi thành:
+`site.yml` sau đó converge theo thứ tự:
 
 ```text
-https://192.168.30.45:6443
+preflight
+ -> HAProxy API backend tang2
+ -> K3s server tang2
+ -> K3s agent tang4
+ -> Traefik/ServiceLB trên tang4
+ -> HAProxy ingress backend tang4
+ -> smoke workload
+ -> validation
 ```
 
-### Phase 4: Addons
+## Restore app1
 
-Ansible apply Traefik `HelmChartConfig`, đợi rollout và xác minh Traefik/ServiceLB trên tang4.
-
-### Phase 5: HAProxy application listeners
-
-```text
-192.168.30.45:80  -> 192.168.30.35:80
-192.168.30.45:443 -> 192.168.30.35:443
-```
-
-Template được kiểm tra bằng `haproxy -c` trước khi recreate container.
-
-### Phase 6: Smoke workload
-
-Static manifest tạo namespace `lab-demo`, Deployment, Service và Ingress `demo.apps.k3s.home.arpa`.
-
-### Phase 7: Validation
-
-Kiểm tra single node, scheduling, API direct/proxy, Traefik/ServiceLB, smoke HTTP/HTTPS và protected containers tang3.
-
-## 8. Validation thủ công
+Bootstrap lại namespace-scoped deploy identity nếu cluster mới:
 
 ```bash
-kubectl --kubeconfig /home/monitor/.kube/config get nodes -o wide
-kubectl --kubeconfig /home/monitor/.kube/config get nodes --show-labels
-kubectl --kubeconfig /home/monitor/.kube/config get pods -A -o wide
-kubectl --kubeconfig /home/monitor/.kube/config get svc -A
-kubectl --kubeconfig /home/monitor/.kube/config get ingress -A
-kubectl --kubeconfig /home/monitor/.kube/config get endpoints -A
+cd /home/monitor/actions-runner-app1/_work/app1/app1
+sh scripts/bootstrap-rbac.sh
 ```
 
-Expected node set:
+Release bình thường phải đi qua push `main`, tạo exact-SHA images và deploy bằng self-hosted runner. Không dùng `latest` hoặc admin kubeconfig trong CI.
 
-```text
-server-tang4   Ready   control-plane
-```
-
-Không được còn stale cluster node khác.
-
-API proof:
+## Validation
 
 ```bash
-curl -k https://192.168.30.35:6443/ping
-curl -k https://192.168.30.45:6443/ping
-```
-
-Ingress proof:
-
-```bash
-curl -H 'Host: demo.apps.k3s.home.arpa' http://192.168.30.45/
-curl -k -H 'Host: demo.apps.k3s.home.arpa' https://192.168.30.45/
-```
-
-## 9. Demo application
-
-Sau khi platform validation pass:
-
-```bash
-ansible-playbook playbooks/app.yml
-curl -H 'Host: nginx.onprem.site' http://192.168.30.45/
-```
-
-Hai Nginx replicas phải Ready trên tang4. `nodeSelector: server-tang4` vẫn đúng dù node đồng thời là control plane.
-
-## 10. Restore app1 CI/CD
-
-Cluster rebuild làm mất namespace/RBAC/token cũ. Trước khi pipeline app1 deploy lại:
-
-1. Bootstrap namespace-scoped `ci-deployer` bằng admin kubeconfig.
-2. Tạo lại `/home/monitor/.kube/microservices-demo-deployer.config` mode `0600`.
-3. Deploy exact known-good Git SHA hoặc chạy lại pipeline `app1`.
-4. Xác minh `/`, Auth, User và Product health routes.
-
-Không dùng admin kubeconfig trong application runner.
-
-## 11. Idempotency
-
-Chạy lại:
-
-```bash
-ansible-playbook playbooks/site.yml
 ansible-playbook playbooks/validate.yml
+kubectl --kubeconfig /home/monitor/.kube/config get nodes -o wide
+kubectl --kubeconfig /home/monitor/.kube/config get pods -A -o wide
+curl -ksS https://192.168.30.200:6443/ping
+curl -ksS https://192.168.30.45:6443/ping
+curl -H 'Host: app1.onprem.site' http://192.168.30.45/api/auth/health
+curl --fail https://app1.onprem.site/api/auth/health
 ```
 
-HAProxy không được recreate nếu config/container không drift. K3s không được reinstall nếu binary, version, config và service đã đúng. Read-only command tasks phải báo `ok`.
+Chạy `site.yml` lần hai. Idempotency đạt khi `changed=0`, `failed=0` (ngoại trừ thay đổi có chủ đích từ external controllers).
 
-Recovery playbook là one-time destructive workflow; sau khi tang4 đã chạy `k3s.service`, guard sẽ từ chối chạy lại.
+## Rollback boundary
 
-## 12. Điều kiện dừng
-
-Dừng thay vì bypass khi:
-
-- host identity/IP/interface không đúng inventory;
-- phát hiện unrelated runtime/workload trên tang4;
-- official agent uninstall script không tồn tại;
-- K3s fail do disk/filesystem I/O;
-- monitoring tang3 mất;
-- bước tiếp theo cần xóa dữ liệu ngoài danh sách K3s đã review.
+Sau khi official uninstall chạy trên tang4, rollback tại chỗ về SQLite cũ không được bảo đảm. Recovery source là Git, exact-SHA images và backup manifest. Với dữ liệu stateful trong tương lai, phải có PVC/database backup riêng trước migration.

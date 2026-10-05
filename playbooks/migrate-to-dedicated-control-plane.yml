@@ -1,0 +1,150 @@
+---
+- name: Validate the new dedicated control-plane host
+  hosts: control_plane
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Require explicit approval for the topology migration
+      ansible.builtin.assert:
+        that:
+          - confirm_k3s_topology_migration | default(false) | bool
+        fail_msg: >-
+          Re-run with -e confirm_k3s_topology_migration=true only after the
+          current application manifests have been backed up.
+
+    - name: Verify tang2 identity and LAN interface
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == 'server-tang2'
+          - ansible_host == '192.168.30.200'
+          - lan_interface == 'wlx58044f3fffa6'
+          - ansible_host in ansible_facts['all_ipv4_addresses']
+          - lan_interface in ansible_facts['interfaces']
+        fail_msg: Refusing migration because the tang2 identity is unexpected.
+
+    - name: Read tang2 service state
+      ansible.builtin.service_facts:
+
+    - name: Require a clean tang2 K3s target
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['k3s.service'] is not defined or ansible_facts.services['k3s.service'].state != 'running'
+          - ansible_facts.services['k3s-agent.service'] is not defined or ansible_facts.services['k3s-agent.service'].state != 'running'
+        fail_msg: Tang2 already runs K3s; stop for manual review.
+
+    - name: Check unrelated container runtime services on tang2
+      ansible.builtin.command: systemctl is-active {{ item }}
+      loop:
+        - docker
+        - crio
+        - containerd
+      register: migration_tang2_runtime_checks
+      failed_when: false
+      changed_when: false
+
+    - name: Refuse tang2 when an unrelated runtime is active
+      ansible.builtin.assert:
+        that:
+          - migration_tang2_runtime_checks.results | selectattr('rc', 'equalto', 0) | list | length == 0
+        fail_msg: Tang2 has an active non-K3s container runtime; inspect it before installation.
+
+- name: Remove the current single-node K3s server from tang4
+  hosts: workers
+  gather_facts: true
+  become: true
+  vars:
+    migration_leftover_paths:
+      - /etc/rancher/k3s
+      - /var/lib/rancher/k3s
+      - /var/lib/kubelet
+      - /run/k3s
+      - /run/flannel
+      - /var/lib/cni
+      - /etc/cni
+      - /opt/cni
+    migration_network_interfaces:
+      - cni0
+      - flannel.1
+      - kube-ipvs0
+  tasks:
+    - name: Require explicit approval for the topology migration
+      ansible.builtin.assert:
+        that:
+          - confirm_k3s_topology_migration | default(false) | bool
+
+    - name: Verify tang4 identity and LAN interface
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == 'server-tang4'
+          - ansible_host == '192.168.30.35'
+          - ansible_host in ansible_facts['all_ipv4_addresses']
+          - lan_interface in ansible_facts['interfaces']
+        fail_msg: Refusing cleanup because the tang4 identity is unexpected.
+
+    - name: Verify the controller-side application backup exists
+      ansible.builtin.stat:
+        path: /home/monitor/app1-pre-migration-backup.yaml
+      delegate_to: localhost
+      become: false
+      register: migration_application_backup
+
+    - name: Require the application backup before removing SQLite state
+      ansible.builtin.assert:
+        that:
+          - migration_application_backup.stat.exists
+          - migration_application_backup.stat.size | int > 0
+
+    - name: Read tang4 service state
+      ansible.builtin.service_facts:
+
+    - name: Require the expected K3s server on tang4
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['k3s.service'] is defined
+          - ansible_facts.services['k3s.service'].state == 'running'
+          - ansible_facts.services['k3s-agent.service'] is not defined or ansible_facts.services['k3s-agent.service'].state != 'running'
+        fail_msg: Tang4 is not in the expected pre-migration single-node state.
+
+    - name: Inspect the official K3s server uninstall script
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s-uninstall.sh
+      register: migration_uninstall_script
+
+    - name: Require the official server uninstall script
+      ansible.builtin.assert:
+        that:
+          - migration_uninstall_script.stat.exists
+          - migration_uninstall_script.stat.executable
+
+    - name: Run the official K3s server uninstall script
+      ansible.builtin.command: /usr/local/bin/k3s-uninstall.sh
+      changed_when: true
+
+    - name: Remove only known K3s leftovers
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ migration_leftover_paths }}"
+
+    - name: Inspect known K3s network interfaces
+      ansible.builtin.command: ip link show {{ item }}
+      loop: "{{ migration_network_interfaces }}"
+      register: migration_interface_checks
+      failed_when: false
+      changed_when: false
+
+    - name: Remove remaining K3s network interfaces
+      ansible.builtin.command: ip link delete {{ item.item }}
+      loop: "{{ migration_interface_checks.results }}"
+      when: item.rc == 0
+      changed_when: true
+
+    - name: Reload systemd after server removal
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Verify the old K3s process is gone
+      ansible.builtin.command: pgrep -af '[k]3s server'
+      register: migration_server_process
+      failed_when: migration_server_process.rc == 0
+      changed_when: false

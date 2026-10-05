@@ -1,0 +1,8 @@
+---
+agent_config_yaml: |
+  node-name: {{ inventory_hostname }}
+  node-ip: {{ ansible_host }}
+  flannel-iface: {{ lan_interface }}
+  node-label:
+    - "svccontroller.k3s.cattle.io/enablelb=true"
+    - "svccontroller.k3s.cattle.io/lbpool=ingress"

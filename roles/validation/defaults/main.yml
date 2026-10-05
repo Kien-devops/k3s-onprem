@@ -1,6 +1,7 @@
 ---
 validation_control_plane_name: "{{ groups['control_plane'][0] }}"
-validation_workload_node_name: "{{ k3s_workload_node_name }}"
+validation_worker_name: "{{ groups['workers'][0] }}"
+validation_workload_node_name: "{{ validation_worker_name }}"
 validation_node_ready_timeout: 120s
 validation_smoke_namespace: lab-demo
 validation_smoke_label: app=nginx-smoke
