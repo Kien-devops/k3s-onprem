@@ -63,6 +63,8 @@ preflight
  -> validation
 ```
 
+Worker convergence dùng `serial: 1` và thứ tự hostname để cập nhật tang1 trước tang4. Cách này tránh restart đồng thời hai K3s agent và giữ backend ingress hiện hữu trên tang4 trong lúc tang1 được đưa vào pool.
+
 ## Restore app1
 
 Bootstrap lại namespace-scoped deploy identity nếu cluster mới:

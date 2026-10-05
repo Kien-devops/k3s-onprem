@@ -27,6 +27,8 @@
 
 - name: 4 | Converge K3s workers
   hosts: workers
+  order: sorted
+  serial: 1
   gather_facts: true
   become: true
   tags: [k3s, workers]
