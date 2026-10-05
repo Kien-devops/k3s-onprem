@@ -18,7 +18,7 @@ frontend k3s_api
 
 backend k3s_api_backend
     option tcp-check
-    server server-tang2 {{ haproxy_api_backend }}:6443 check inter 3s fall 3 rise 2
+    server {{ k3s_control_plane_name }} {{ haproxy_api_backend }}:6443 check inter 3s fall 3 rise 2
 
 {% if haproxy_render_ingress %}
 frontend application_http
@@ -27,7 +27,7 @@ frontend application_http
 
 backend application_http_backend
     option tcp-check
-    server server-tang4 {{ haproxy_ingress_backend }}:80 check inter 3s fall 3 rise 2
+    server {{ k3s_workload_node_name }} {{ haproxy_ingress_backend }}:80 check inter 3s fall 3 rise 2
 
 frontend application_https
     bind *:443
@@ -35,7 +35,7 @@ frontend application_https
 
 backend application_https_backend
     option tcp-check
-    server server-tang4 {{ haproxy_ingress_backend }}:443 check inter 3s fall 3 rise 2
+    server {{ k3s_workload_node_name }} {{ haproxy_ingress_backend }}:443 check inter 3s fall 3 rise 2
 {% endif %}
 
 listen local_stats

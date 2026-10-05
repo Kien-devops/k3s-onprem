@@ -25,15 +25,7 @@
   roles:
     - role: k3s_control_plane
 
-- name: 4 | Converge K3s workers
-  hosts: workers
-  gather_facts: true
-  become: true
-  tags: [k3s, workers]
-  roles:
-    - role: k3s_worker
-
-- name: 5 | Converge cluster addons
+- name: 4 | Converge cluster addons
   hosts: control_plane
   gather_facts: false
   become: true
@@ -41,7 +33,7 @@
   roles:
     - role: k3s_addons
 
-- name: 6 | Enable the application ingress entry points
+- name: 5 | Enable the application ingress entry points
   hosts: load_balancers
   gather_facts: false
   become: false
@@ -51,10 +43,10 @@
   roles:
     - role: haproxy
 
-- name: 7 | Deploy and test the smoke application
+- name: 6 | Deploy and test the smoke application
   ansible.builtin.import_playbook: smoke-test.yml
   tags: [smoke_test]
 
-- name: 8 | Validate the complete homelab
+- name: 7 | Validate the complete homelab
   ansible.builtin.import_playbook: validate.yml
   tags: [validation]

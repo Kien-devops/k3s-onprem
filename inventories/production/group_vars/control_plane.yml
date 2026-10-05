@@ -9,5 +9,6 @@ server_config_yaml: |
     - {{ api_endpoint }}
   secrets-encryption: true
   write-kubeconfig-mode: "0600"
-  node-taint:
-    - "node-role.kubernetes.io/control-plane=true:NoSchedule"
+  node-label:
+    - "svccontroller.k3s.cattle.io/enablelb=true"
+    - "svccontroller.k3s.cattle.io/lbpool=ingress"

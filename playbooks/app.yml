@@ -50,16 +50,16 @@
       register: app_pods_raw
       changed_when: false
 
-    - name: Verify both replicas run on the worker
+    - name: Verify both replicas run on the workload node
       vars:
         app_pods: "{{ (app_pods_raw.stdout | from_json)['items'] }}"
       ansible.builtin.assert:
         that:
           - app_pods | length == 2
-          - app_pods | map(attribute='spec.nodeName') | unique | list == [k3s_worker_name]
+          - app_pods | map(attribute='spec.nodeName') | unique | list == [k3s_workload_node_name]
           - app_pods | map(attribute='status.phase') | unique | list == ['Running']
           - app_pods | map(attribute='status.containerStatuses') | flatten | map(attribute='ready') | unique | list == [true]
-        fail_msg: Both nginx replicas must be Ready on {{ k3s_worker_name }}.
+        fail_msg: Both nginx replicas must be Ready on {{ k3s_workload_node_name }}.
 
 - name: Test the demo application through the existing HAProxy route
   hosts: load_balancers

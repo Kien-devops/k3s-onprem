@@ -26,10 +26,10 @@
   ansible.builtin.assert:
     that:
       - k3s_addons_traefik_pods | length > 0
-      - k3s_addons_traefik_pods | map(attribute='spec.nodeName') | unique | list == [k3s_addons_expected_worker]
+      - k3s_addons_traefik_pods | map(attribute='spec.nodeName') | unique | list == [k3s_addons_expected_node]
       - k3s_addons_traefik_pods | map(attribute='status.phase') | unique | list == ['Running']
     fail_msg: >-
-      Traefik must be Running only on {{ k3s_addons_expected_worker }}.
+      Traefik must be Running only on {{ k3s_addons_expected_node }}.
 
 - name: Read Traefik ServiceLB pods
   ansible.builtin.command: >-
@@ -47,8 +47,8 @@
     k3s_addons_servicelb_pods: "{{ (k3s_addons_servicelb_pods_raw.stdout | from_json)['items'] }}"
   ansible.builtin.assert:
     that:
-      - k3s_addons_servicelb_pods | map(attribute='spec.nodeName') | unique | list == [k3s_addons_expected_worker]
+      - k3s_addons_servicelb_pods | map(attribute='spec.nodeName') | unique | list == [k3s_addons_expected_node]
       - k3s_addons_servicelb_pods | map(attribute='status.phase') | unique | list == ['Running']
     fail_msg: >-
       Traefik ServiceLB must be Running only on
-      {{ k3s_addons_expected_worker }}.
+      {{ k3s_addons_expected_node }}.

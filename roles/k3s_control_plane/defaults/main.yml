@@ -3,5 +3,4 @@ k3s_control_plane_remote_kubeconfig: /etc/rancher/k3s/k3s.yaml
 k3s_control_plane_source_kubeconfig: "{{ kubeconfig }}.source"
 k3s_control_plane_binary: /usr/local/bin/k3s
 k3s_control_plane_config: /etc/rancher/k3s/config.yaml
-k3s_control_plane_token: /var/lib/rancher/k3s/server/node-token
 k3s_control_plane_api_wait_timeout: 120

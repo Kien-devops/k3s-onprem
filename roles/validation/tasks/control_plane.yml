@@ -1,9 +1,8 @@
 ---
-- name: Wait for both Kubernetes nodes to be Ready
+- name: Wait for the single Kubernetes node to be Ready
   ansible.builtin.command: >-
     k3s kubectl wait --for=condition=Ready
     node/{{ validation_control_plane_name }}
-    node/{{ validation_worker_name }}
     --timeout={{ validation_node_ready_timeout }}
   changed_when: false
 
@@ -16,6 +15,25 @@
   ansible.builtin.debug:
     var: validation_nodes.stdout_lines
 
+- name: Read Kubernetes nodes as structured data
+  ansible.builtin.command: k3s kubectl get nodes -o json
+  register: validation_nodes_raw
+  changed_when: false
+
+- name: Assert the rebuilt cluster contains only the expected node
+  vars:
+    validation_node_items: "{{ (validation_nodes_raw.stdout | from_json)['items'] }}"
+  ansible.builtin.assert:
+    that:
+      - validation_node_items | length == 1
+      - validation_node_items[0].metadata.name == validation_control_plane_name
+      - validation_node_items[0].spec.taints | default([]) | selectattr('effect', 'equalto', 'NoSchedule') | list | length == 0
+      - validation_node_items[0].metadata.labels['svccontroller.k3s.cattle.io/enablelb'] == 'true'
+      - validation_node_items[0].metadata.labels['svccontroller.k3s.cattle.io/lbpool'] == 'ingress'
+    fail_msg: >-
+      The rebuilt cluster must contain only schedulable node
+      {{ validation_control_plane_name }}.
+
 - name: Read Traefik pods
   ansible.builtin.command: >-
     k3s kubectl -n kube-system get pods
@@ -23,15 +41,15 @@
   register: validation_traefik_raw
   changed_when: false
 
-- name: Assert Traefik is Running on the worker
+- name: Assert Traefik is Running on the workload node
   vars:
     validation_traefik_pods: "{{ (validation_traefik_raw.stdout | from_json)['items'] }}"
   ansible.builtin.assert:
     that:
       - validation_traefik_pods | length > 0
-      - validation_traefik_pods | map(attribute='spec.nodeName') | unique | list == [validation_worker_name]
+      - validation_traefik_pods | map(attribute='spec.nodeName') | unique | list == [validation_workload_node_name]
       - validation_traefik_pods | map(attribute='status.phase') | unique | list == ['Running']
-    fail_msg: Traefik is not Running exclusively on the worker node.
+    fail_msg: Traefik is not Running exclusively on the workload node.
 
 - name: Read Traefik ServiceLB pods
   ansible.builtin.command: >-
@@ -40,15 +58,15 @@
   register: validation_servicelb_raw
   changed_when: false
 
-- name: Assert ServiceLB is Running on the worker
+- name: Assert ServiceLB is Running on the workload node
   vars:
     validation_servicelb_pods: "{{ (validation_servicelb_raw.stdout | from_json)['items'] }}"
   ansible.builtin.assert:
     that:
       - validation_servicelb_pods | length > 0
-      - validation_servicelb_pods | map(attribute='spec.nodeName') | unique | list == [validation_worker_name]
+      - validation_servicelb_pods | map(attribute='spec.nodeName') | unique | list == [validation_workload_node_name]
       - validation_servicelb_pods | map(attribute='status.phase') | unique | list == ['Running']
-    fail_msg: Traefik ServiceLB is not Running exclusively on the worker node.
+    fail_msg: Traefik ServiceLB is not Running exclusively on the workload node.
 
 - name: Read smoke-test pods
   ansible.builtin.command: >-
@@ -57,24 +75,12 @@
   register: validation_smoke_raw
   changed_when: false
 
-- name: Assert the smoke workload is Running on the worker
+- name: Assert the smoke workload is Running on the workload node
   vars:
     validation_smoke_pods: "{{ (validation_smoke_raw.stdout | from_json)['items'] }}"
   ansible.builtin.assert:
     that:
       - validation_smoke_pods | length > 0
-      - validation_smoke_pods | map(attribute='spec.nodeName') | unique | list == [validation_worker_name]
+      - validation_smoke_pods | map(attribute='spec.nodeName') | unique | list == [validation_workload_node_name]
       - validation_smoke_pods | map(attribute='status.phase') | unique | list == ['Running']
-    fail_msg: The smoke-test workload is not Running on the worker node.
-
-- name: Read protected Docker workloads on the control plane
-  ansible.builtin.command: docker ps --format {% raw %}'{{.Names}}|{{.Status}}'{% endraw %}
-  register: validation_control_plane_containers
-  changed_when: false
-
-- name: Assert protected Docker workloads remain running
-  ansible.builtin.assert:
-    that:
-      - item in validation_control_plane_containers.stdout
-    fail_msg: Protected Docker workload {{ item }} is not running on the control plane.
-  loop: "{{ validation_required_control_plane_containers }}"
+    fail_msg: The smoke-test workload is not Running on the workload node.

@@ -17,10 +17,19 @@
     status_code: 200
   register: validation_api
 
+- name: Test the Kubernetes API directly on the control-plane backend
+  ansible.builtin.uri:
+    url: "https://{{ haproxy_api_backend }}:{{ api_port }}/ping"
+    validate_certs: false
+    return_content: true
+    status_code: 200
+  register: validation_api_backend
+
 - name: Assert the Kubernetes API response
   ansible.builtin.assert:
     that:
       - validation_api.content | trim == 'pong'
+      - validation_api_backend.content | trim == 'pong'
     fail_msg: HAProxy did not return the expected K3s API ping response.
 
 - name: Test smoke application over HTTP through HAProxy

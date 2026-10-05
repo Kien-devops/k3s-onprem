@@ -5,10 +5,3 @@
   become: true
   roles:
     - role: k3s_control_plane
-
-- name: Converge K3s workers
-  hosts: workers
-  gather_facts: true
-  become: true
-  roles:
-    - role: k3s_worker

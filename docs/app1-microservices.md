@@ -31,8 +31,8 @@ Auth API chỉ là demo, không phải hệ thống danh tính production.
 
 Repository platform quản lý:
 
-- inventory của ba server;
-- K3s control plane và worker;
+- inventory của hai host thuộc platform;
+- K3s single-node server schedulable trên tang4;
 - Kubernetes API endpoint qua HAProxy;
 - Traefik và ServiceLB;
 - host-level validation và smoke workload;
@@ -57,9 +57,8 @@ Ranh giới này giúp application release không chạy lại Ansible, không s
 
 | Thành phần | Vị trí / cấu hình |
 | --- | --- |
-| K3s control plane | `server-tang2` - `192.168.30.44` |
-| Edge và CD runner | `server-tang3` - `192.168.30.45` |
-| Application worker | `server-tang4` - `192.168.30.35` |
+| K3s server và application node | `server-tang4` - `192.168.30.35` |
+| Edge, HAProxy và CD runner | `server-tang3` - `192.168.30.45` |
 | Namespace | `microservices-demo` |
 | Ingress hostname | `app1.onprem.site` |
 | Ingress class | `traefik` |
@@ -203,7 +202,7 @@ Runner truy cập Kubernetes API qua:
 self-hosted runner
   -> https://192.168.30.45:6443
   -> HAProxy tang3
-  -> K3s API tang2
+  -> K3s API tang4
 ```
 
 ## 9. Kiểm tra trạng thái application
@@ -303,7 +302,7 @@ Nếu thay đổi ảnh hưởng API contract của nhiều service, phải roll
 
 ## 12. Giới hạn hiện tại
 
-- Một control plane, một worker và một HAProxy là các failure domain đơn lẻ.
+- Một K3s node và một HAProxy là các failure domain đơn lẻ; đây không phải kiến trúc HA.
 - Hai frontend Pod không bảo vệ khỏi sự cố mất `server-tang4`.
 - Auth, User và Product dùng dữ liệu demo, chưa có database.
 - Chưa có Horizontal Pod Autoscaler hoặc PodDisruptionBudget.
